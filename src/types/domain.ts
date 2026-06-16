@@ -41,4 +41,8 @@ export type Observation = {
   observedAt: string;
   environment: string;
   rarity: Rarity;
+  source?: 'web' | 'thinklet';
+  externalPhotoUri?: string;
+  aiLabel?: string;
+  aiConfidence?: number | null;
 };

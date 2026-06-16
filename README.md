@@ -10,6 +10,7 @@
 - GPSと撮影時刻を観察記録に保存
 - 写真・日時・場所・候補生物・レア度をIndexedDBにローカル保存
 - 発見済みの観察を図鑑として一覧表示
+- THINKLET Androidアプリから観察メタデータを取り込み
 
 ## 方針
 
@@ -29,6 +30,20 @@ npm run build
 ```
 
 `dist/` がGitHub Pages用の静的出力です。
+
+## THINKLETアプリ
+
+THINKLET側のネイティブAndroidアプリは `thinklet-android/` にあります。
+
+```bash
+cd thinklet-android
+./gradlew assembleDebug
+./gradlew installDebug
+```
+
+THINKLETアプリでは、カメラ撮影、GPS取得、撮影時刻取得、ML Kit Image Labelingによる簡易ラベル推定を行います。「Webへ送る」を押すと、GitHub PagesのWeb図鑑を開き、`thinkletObservation` パラメータ経由で観察メタデータをIndexedDBへ取り込みます。
+
+現時点ではサーバーなし構成のため、撮影した写真本体はTHINKLET側ローカルに保存し、Web側にはプレースホルダー画像と写真URIメモを保存します。写真本体の同期は、次フェーズでPWA Share Targetまたは小さなAPIを追加する想定です。
 
 ## データ
 

@@ -7,6 +7,7 @@ import { EncyclopediaPanel } from './components/EncyclopediaPanel';
 import { MapPanel } from './components/MapPanel';
 import { KAMIYAMA_CENTER, speciesCandidates } from './data/kamiyama';
 import { deleteObservation, loadObservations, saveObservation } from './lib/storage';
+import { clearThinkletObservationParam, readThinkletObservationFromUrl } from './lib/thinkletImport';
 import type { LatLng, Observation } from './types/domain';
 
 type Tab = 'map' | 'capture' | 'encyclopedia';
@@ -20,7 +21,28 @@ export default function App() {
 
   useEffect(() => {
     loadObservations()
-      .then(setObservations)
+      .then(async (loadedObservations) => {
+        const thinkletObservation = readThinkletObservationFromUrl();
+        if (!thinkletObservation) {
+          setObservations(loadedObservations);
+          return;
+        }
+
+        const alreadyImported = loadedObservations.some(
+          (observation) => observation.id === thinkletObservation.id,
+        );
+        if (!alreadyImported) {
+          await saveObservation(thinkletObservation);
+          setObservations([thinkletObservation, ...loadedObservations]);
+          setSelectedObservation(thinkletObservation);
+          setStatusText('THINKLETから観察を取り込みました。');
+        } else {
+          setObservations(loadedObservations);
+          setSelectedObservation(thinkletObservation);
+          setStatusText('THINKLET観察はすでに取り込み済みです。');
+        }
+        clearThinkletObservationParam();
+      })
       .catch(() => setStatusText('ローカル図鑑の読み込みに失敗しました。'));
     resolveInitialLocation();
   }, []);

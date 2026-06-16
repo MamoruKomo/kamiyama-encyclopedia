@@ -4,3 +4,6 @@ dist/
 .env
 .DS_Store
 npm-debug.log*
+thinklet-android/local.properties
+thinklet-android/.gradle/
+thinklet-android/app/build/
