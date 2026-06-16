@@ -2,7 +2,7 @@ import { KAMIYAMA_CENTER, speciesCandidates } from '../data/kamiyama';
 import { describeEnvironment, inferRarity, suggestCandidates } from './geo';
 import type { LatLng, Observation, SpeciesCategory } from '../types/domain';
 
-type ThinkletPayload = {
+export type ThinkletPayload = {
   id?: string;
   source?: string;
   category?: string;
@@ -13,6 +13,7 @@ type ThinkletPayload = {
   accuracyMeters?: number | null;
   observedAt?: number | string;
   photoUri?: string | null;
+  receivedAt?: number;
 };
 
 export function readThinkletObservationFromUrl(): Observation | null {
@@ -27,34 +28,38 @@ export function readThinkletObservationFromUrl(): Observation | null {
 
   try {
     const payload = JSON.parse(raw) as ThinkletPayload;
-    const point = normalizePoint(payload);
-    const observedAt = normalizeObservedAt(payload.observedAt);
-    const category = normalizeCategory(payload.category);
-    const suggested = suggestCandidates(speciesCandidates, category, point, new Date(observedAt))[0]
-      ?.candidate ?? null;
-    const label = payload.label?.trim() || suggested?.commonName || 'Thinklet観察';
-
-    return {
-      id: payload.id || `thinklet-${Date.parse(observedAt)}`,
-      photoUri: buildThinkletPlaceholder(label, category),
-      category,
-      candidateId: suggested?.id ?? null,
-      customName: label,
-      note: buildNote(payload),
-      latitude: point.latitude,
-      longitude: point.longitude,
-      accuracy: typeof payload.accuracyMeters === 'number' ? payload.accuracyMeters : null,
-      observedAt,
-      environment: describeEnvironment(point),
-      rarity: inferRarity(suggested, point, new Date(observedAt)),
-      source: 'thinklet',
-      externalPhotoUri: payload.photoUri ?? undefined,
-      aiLabel: payload.label,
-      aiConfidence: typeof payload.confidence === 'number' ? payload.confidence : null,
-    };
+    return observationFromThinkletPayload(payload);
   } catch {
     return null;
   }
+}
+
+export function observationFromThinkletPayload(payload: ThinkletPayload): Observation {
+  const point = normalizePoint(payload);
+  const observedAt = normalizeObservedAt(payload.observedAt);
+  const category = normalizeCategory(payload.category);
+  const suggested = suggestCandidates(speciesCandidates, category, point, new Date(observedAt))[0]
+    ?.candidate ?? null;
+  const label = payload.label?.trim() || suggested?.commonName || 'Thinklet観察';
+
+  return {
+    id: payload.id || `thinklet-${Date.parse(observedAt)}`,
+    photoUri: buildThinkletPlaceholder(label, category),
+    category,
+    candidateId: suggested?.id ?? null,
+    customName: label,
+    note: buildNote(payload),
+    latitude: point.latitude,
+    longitude: point.longitude,
+    accuracy: typeof payload.accuracyMeters === 'number' ? payload.accuracyMeters : null,
+    observedAt,
+    environment: describeEnvironment(point),
+    rarity: inferRarity(suggested, point, new Date(observedAt)),
+    source: 'thinklet',
+    externalPhotoUri: payload.photoUri ?? undefined,
+    aiLabel: payload.label,
+    aiConfidence: typeof payload.confidence === 'number' ? payload.confidence : null,
+  };
 }
 
 export function clearThinkletObservationParam() {

@@ -139,10 +139,16 @@ private fun ThinkletCameraContent(viewModel: ThinkletObservationViewModel) {
                         Text(if (state.isCapturing) "撮影中" else "撮影")
                     }
                     Button(
+                        enabled = state.latestPayload != null && !state.isSending,
+                        onClick = { viewModel.sendObservationToSyncApi(context) },
+                    ) {
+                        Text(if (state.isSending) "送信中" else "同期送信")
+                    }
+                    Button(
                         enabled = state.latestPayload != null,
                         onClick = { viewModel.openWebApp(context) },
                     ) {
-                        Text("Webへ送る")
+                        Text("Webで確認")
                     }
                 }
                 Text(

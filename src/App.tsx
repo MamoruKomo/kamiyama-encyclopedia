@@ -7,6 +7,7 @@ import { EncyclopediaPanel } from './components/EncyclopediaPanel';
 import { MapPanel } from './components/MapPanel';
 import { KAMIYAMA_CENTER, speciesCandidates } from './data/kamiyama';
 import { deleteObservation, loadObservations, saveObservation } from './lib/storage';
+import { configureSyncEndpointFromUrl, pullThinkletObservations } from './lib/syncApi';
 import {
   clearThinkletObservationParam,
   hasThinkletObservationParam,
@@ -24,35 +25,53 @@ export default function App() {
   const [statusText, setStatusText] = useState('神山町周辺の軽い範囲で探索を開始できます。');
 
   useEffect(() => {
+    const configuredSyncEndpoint = configureSyncEndpointFromUrl();
     const hasIncomingThinkletObservation = hasThinkletObservationParam();
     loadObservations()
       .then(async (loadedObservations) => {
+        let nextObservations = loadedObservations;
         const thinkletObservation = readThinkletObservationFromUrl();
-        if (!thinkletObservation) {
-          setObservations(loadedObservations);
-          return;
-        }
-
-        const alreadyImported = loadedObservations.some(
-          (observation) => observation.id === thinkletObservation.id,
-        );
-        if (!alreadyImported) {
-          await saveObservation(thinkletObservation);
-          setObservations([thinkletObservation, ...loadedObservations]);
+        if (thinkletObservation) {
+          const alreadyImported = nextObservations.some(
+            (observation) => observation.id === thinkletObservation.id,
+          );
+          if (!alreadyImported) {
+            await saveObservation(thinkletObservation);
+            nextObservations = [thinkletObservation, ...nextObservations];
+            setStatusText('THINKLETから観察を取り込みました。');
+          } else {
+            setStatusText('THINKLET観察はすでに取り込み済みです。');
+          }
           setSelectedObservation(thinkletObservation);
           setCurrentLocation({
             latitude: thinkletObservation.latitude,
             longitude: thinkletObservation.longitude,
           });
-          setStatusText('THINKLETから観察を取り込みました。');
-        } else {
-          setObservations(loadedObservations);
-          setSelectedObservation(thinkletObservation);
-          setStatusText('THINKLET観察はすでに取り込み済みです。');
+          clearThinkletObservationParam();
         }
-        clearThinkletObservationParam();
+
+        const syncedObservations = await pullThinkletObservations();
+        const uniqueSynced = syncedObservations.filter(
+          (synced) => !nextObservations.some((observation) => observation.id === synced.id),
+        );
+        if (uniqueSynced.length > 0) {
+          await Promise.all(uniqueSynced.map(saveObservation));
+          nextObservations = [...uniqueSynced, ...nextObservations];
+          setSelectedObservation(uniqueSynced[0]);
+          setCurrentLocation({
+            latitude: uniqueSynced[0].latitude,
+            longitude: uniqueSynced[0].longitude,
+          });
+          if (!thinkletObservation) {
+            setStatusText(`同期APIから${uniqueSynced.length}件のTHINKLET観察を取り込みました。`);
+          }
+        } else if (configuredSyncEndpoint && !thinkletObservation) {
+          setStatusText('同期APIを設定しました。次回からTHINKLET観察を自動取り込みします。');
+        }
+
+        setObservations(nextObservations);
       })
-      .catch(() => setStatusText('ローカル図鑑の読み込みに失敗しました。'));
+      .catch((error) => setStatusText(`図鑑の読み込み/同期に失敗しました: ${String(error)}`));
     resolveInitialLocation({ preserveStatus: hasIncomingThinkletObservation });
   }, []);
 

@@ -35,11 +35,15 @@ import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -76,6 +80,7 @@ data class ThinkletObservationState(
     val latestPayload: ThinkletObservationPayload? = null,
     val isCameraReady: Boolean = false,
     val isCapturing: Boolean = false,
+    val isSending: Boolean = false,
 )
 
 class ThinkletObservationViewModel : ViewModel() {
@@ -172,6 +177,40 @@ class ThinkletObservationViewModel : ViewModel() {
                     isCapturing = false,
                 )
             }
+        }
+    }
+
+    fun sendObservationToSyncApi(context: Context) {
+        val payload = _state.value.latestPayload
+        if (payload == null) {
+            Toast.makeText(context, "先に観察を撮影してください", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val endpoint = BuildConfig.SYNC_API_URL.trim().trimEnd('/')
+        if (endpoint.isBlank()) {
+            _state.value = _state.value.copy(status = "同期API URLが未設定です。Webで確認を使ってください。")
+            Toast.makeText(context, "同期API URLが未設定です", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        viewModelScope.launch {
+            _state.value = _state.value.copy(status = "同期APIへ送信しています...", isSending = true)
+            val result = runCatching { postObservation(endpoint, payload) }
+            result
+                .onSuccess {
+                    _state.value = _state.value.copy(
+                        status = "同期APIへ送信しました。Web図鑑を開くと自動取り込みされます。",
+                        isSending = false,
+                    )
+                    Toast.makeText(context, "同期送信しました", Toast.LENGTH_SHORT).show()
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(
+                        status = "同期送信に失敗: ${error.message}",
+                        isSending = false,
+                    )
+                    Toast.makeText(context, "同期送信に失敗しました", Toast.LENGTH_SHORT).show()
+                }
         }
     }
 
@@ -305,6 +344,33 @@ class ThinkletObservationViewModel : ViewModel() {
         const val TAG = "KamiyamaThinklet"
         const val BUTTON_COOLDOWN_MS = 1500L
         const val WEB_APP_URL = "https://mamorukomo.github.io/kamiyama-encyclopedia/"
+    }
+}
+
+private suspend fun postObservation(endpoint: String, payload: ThinkletObservationPayload) {
+    withContext(Dispatchers.IO) {
+        val connection = (URL("$endpoint/observations").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 10000
+            readTimeout = 10000
+            doOutput = true
+            setRequestProperty("content-type", "application/json; charset=utf-8")
+            if (BuildConfig.SYNC_WRITE_TOKEN.isNotBlank()) {
+                setRequestProperty("authorization", "Bearer ${BuildConfig.SYNC_WRITE_TOKEN}")
+            }
+        }
+
+        try {
+            val body = payload.toJson().toString().toByteArray(Charsets.UTF_8)
+            connection.outputStream.use { output -> output.write(body) }
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                val error = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                throw IllegalStateException("HTTP $status $error")
+            }
+        } finally {
+            connection.disconnect()
+        }
     }
 }
 

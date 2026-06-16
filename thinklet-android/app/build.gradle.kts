@@ -7,6 +7,8 @@ plugins {
 android {
     namespace = "com.mamorukomo.kamiyama.thinklet"
     compileSdk = 36
+    val syncApiUrl = providers.gradleProperty("kamiyamaSyncApiUrl").orElse("")
+    val syncWriteToken = providers.gradleProperty("kamiyamaSyncWriteToken").orElse("")
 
     defaultConfig {
         applicationId = "com.mamorukomo.kamiyama.thinklet"
@@ -15,6 +17,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "SYNC_API_URL", "\"${syncApiUrl.get()}\"")
+        buildConfigField("String", "SYNC_WRITE_TOKEN", "\"${syncWriteToken.get()}\"")
     }
 
     buildTypes {
@@ -38,6 +42,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

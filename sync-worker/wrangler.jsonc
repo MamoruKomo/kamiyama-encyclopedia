@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kamiyama-encyclopedia-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-16",
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "ALLOWED_ORIGINS": "https://mamorukomo.github.io,http://localhost:8081"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "OBSERVATIONS",
+      "id": "REPLACE_WITH_KV_NAMESPACE_ID"
+    }
+  ]
+}

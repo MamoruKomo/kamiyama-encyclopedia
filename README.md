@@ -45,6 +45,40 @@ THINKLETアプリでは、カメラ撮影、GPS取得、撮影時刻取得、ML 
 
 現時点ではサーバーなし構成のため、撮影した写真本体はTHINKLET側ローカルに保存し、Web側にはプレースホルダー画像と写真URIメモを保存します。写真本体の同期は、次フェーズでPWA Share Targetまたは小さなAPIを追加する想定です。
 
+### Webを起動しない同期
+
+`sync-worker/` にCloudflare Worker + KVの同期APIを追加しています。これをデプロイすると、THINKLETはWeb画面を開かずに観察メタデータをPOSTできます。Web図鑑は起動時に同期APIから未取り込み観察を取得します。
+
+Worker側:
+
+```bash
+cd sync-worker
+npm install
+npx wrangler kv namespace create OBSERVATIONS
+# 表示されたidを sync-worker/wrangler.jsonc の kv_namespaces[0].id へ設定
+npx wrangler secret put SYNC_WRITE_TOKEN
+npm run deploy
+```
+
+THINKLET側:
+
+```properties
+# thinklet-android/local.properties
+kamiyamaSyncApiUrl=https://YOUR_WORKER_URL
+kamiyamaSyncWriteToken=YOUR_SYNC_WRITE_TOKEN
+```
+
+```bash
+cd thinklet-android
+./gradlew installDebug
+```
+
+Web側は一度だけ以下のURLで開くと同期API URLを端末に保存します。
+
+```text
+https://mamorukomo.github.io/kamiyama-encyclopedia/?syncEndpoint=https://YOUR_WORKER_URL
+```
+
 ## データ
 
 候補生物データはGBIF occurrence APIで神山町周辺の軽い範囲を確認し、MVP用に軽量化して `src/data/kamiyama.ts` に同梱しています。自然レイヤーは、観察体験を作るための神山町周辺の概略ポリゴンです。
