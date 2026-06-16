@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "神山生物図鑑",
+    "slug": "kamiyama-encyclopedia",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "kamiyama-encyclopedia",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "神山生物図鑑が観察写真を撮影するためにカメラを使用します"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "神山生物図鑑が観察地点を記録するために位置情報を使用します"
+        }
+      ]
+    ]
+  }
+}

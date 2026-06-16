@@ -1,0 +1,28 @@
+{
+  "name": "kamiyama-encyclopedia",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "dev": "expo start --web",
+    "build": "expo export --platform web --output-dir dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "^6.1.2",
+    "expo": "^56.0.0",
+    "expo-camera": "^56.0.8",
+    "expo-location": "^56.0.18",
+    "leaflet": "^1.9.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-leaflet": "^5.0.0",
+    "react-native": "^0.81.5",
+    "react-native-web": "^0.21.1"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.20",
+    "@types/react": "^19.1.8",
+    "typescript": "^5.9.2"
+  }
+}
