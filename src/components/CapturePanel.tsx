@@ -391,10 +391,7 @@ const styles = {
     borderWidth: 2,
     borderColor: '#ffd24a',
     padding: 6,
-    shadowColor: '#102233',
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 7 },
+    boxShadow: '0 7px 14px rgba(16, 34, 51, 0.18)',
   },
   shutterCore: {
     width: '100%' as const,

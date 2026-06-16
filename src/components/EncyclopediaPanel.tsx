@@ -219,10 +219,7 @@ const styles = {
     padding: 10,
     backgroundColor: '#ffffff',
     borderWidth: 2,
-    shadowColor: '#102233',
-    shadowOpacity: 0.09,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
+    boxShadow: '0 6px 12px rgba(16, 34, 51, 0.09)',
   },
   cardImage: {
     width: 108,
