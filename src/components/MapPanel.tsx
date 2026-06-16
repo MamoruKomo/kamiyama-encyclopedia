@@ -28,6 +28,13 @@ const rarityColor: Record<Rarity, string> = {
   special: '#e05a47',
 };
 
+const rarityLabel: Record<Rarity, string> = {
+  common: 'COMMON',
+  uncommon: 'UNCOMMON',
+  rare: 'RARE',
+  special: 'SPECIAL',
+};
+
 export function MapPanel({ observations, currentLocation, onSelectObservation }: MapPanelProps) {
   return (
     <div className="map-shell">
@@ -91,6 +98,8 @@ export function MapPanel({ observations, currentLocation, onSelectObservation }:
             <Popup>
               <strong>{observation.customName || '未同定の観察'}</strong>
               <br />
+              {rarityLabel[observation.rarity]}
+              <br />
               {new Date(observation.observedAt).toLocaleString('ja-JP')}
               <br />
               {observation.environment}
@@ -113,10 +122,10 @@ export function MapPanel({ observations, currentLocation, onSelectObservation }:
 
 function observationIcon(rarity: Rarity) {
   return L.divIcon({
-    className: 'observation-pin',
-    html: `<span style="background:${rarityColor[rarity]}"></span>`,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
+    className: `observation-pin observation-${rarity}`,
+    html: `<span style="background:${rarityColor[rarity]}"></span><b></b>`,
+    iconSize: [38, 38],
+    iconAnchor: [19, 19],
   });
 }
 

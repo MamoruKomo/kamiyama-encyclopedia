@@ -3,15 +3,50 @@
   height: min(58vh, 560px);
   min-height: 410px;
   overflow: hidden;
-  border: 1px solid #cfd9cf;
+  border: 2px solid #173149;
   border-radius: 8px;
-  background: #e7efe9;
+  background: #102233;
+  box-shadow: 0 14px 34px rgba(16, 34, 51, 0.22);
+  position: relative;
+}
+
+.map-shell::before,
+.map-shell::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  z-index: 460;
+}
+
+.map-shell::before {
+  inset: 14px;
+  border: 1px solid rgba(255, 210, 74, 0.42);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(25, 63, 88, 0.32);
+}
+
+.map-shell::after {
+  left: 50%;
+  top: 50%;
+  width: 74px;
+  height: 74px;
+  margin-left: -37px;
+  margin-top: -37px;
+  border: 1px solid rgba(255, 210, 74, 0.28);
+  border-radius: 999px;
+  box-shadow: 0 0 0 34px rgba(47, 176, 136, 0.06);
 }
 
 .kamiyama-map {
   width: 100%;
   height: 100%;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.observation-pin {
+  position: relative;
+  display: grid;
+  place-items: center;
 }
 
 .observation-pin span,
@@ -24,30 +59,72 @@
   box-shadow: 0 4px 12px rgba(20, 35, 26, 0.35);
 }
 
+.observation-pin span {
+  width: 24px;
+  height: 24px;
+  box-shadow:
+    0 0 0 5px rgba(255, 255, 255, 0.44),
+    0 7px 18px rgba(16, 34, 51, 0.42);
+}
+
+.observation-pin b {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  border-radius: 999px;
+}
+
+.observation-rare b,
+.observation-special b {
+  border-color: rgba(255, 210, 74, 0.92);
+  box-shadow: 0 0 18px rgba(255, 210, 74, 0.62);
+}
+
+.observation-special span {
+  box-shadow:
+    0 0 0 5px rgba(255, 210, 74, 0.55),
+    0 0 20px rgba(224, 90, 71, 0.68),
+    0 8px 18px rgba(16, 34, 51, 0.46);
+}
+
 .current-pin span {
   width: 18px;
   height: 18px;
-  background: #2672d8;
-  outline: 5px solid rgba(38, 114, 216, 0.18);
+  background: #1d8df0;
+  outline: 7px solid rgba(29, 141, 240, 0.2);
+  box-shadow: 0 0 0 2px #ffffff, 0 0 22px rgba(29, 141, 240, 0.62);
 }
 
 .known-pin {
   display: grid;
   place-items: center;
-  border: 2px solid #ffffff;
+  border: 2px solid rgba(255, 255, 255, 0.92);
   border-radius: 999px;
   color: #ffffff;
   font-size: 12px;
   font-weight: 800;
   box-shadow: 0 3px 10px rgba(20, 35, 26, 0.28);
+  opacity: 0.82;
 }
 
 .known-pin.plant {
-  background: #668f3b;
+  background: #2fb088;
 }
 
 .known-pin.insect {
-  background: #8f5e2f;
+  background: #c47a2c;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 8px;
+  border: 1px solid rgba(16, 34, 51, 0.18);
+}
+
+.leaflet-popup-content {
+  color: #102233;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 @media (max-width: 520px) {

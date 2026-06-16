@@ -17,6 +17,13 @@ import type { LatLng, Observation } from './types/domain';
 
 type Tab = 'map' | 'capture' | 'encyclopedia';
 
+const rarityLabel = {
+  common: 'COMMON',
+  uncommon: 'UNCOMMON',
+  rare: 'RARE',
+  special: 'SPECIAL',
+} as const;
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('map');
   const [observations, setObservations] = useState<Observation[]>([]);
@@ -79,6 +86,15 @@ export default function App() {
     () => new Set(observations.map((item) => item.candidateId).filter(Boolean)),
     [observations],
   );
+  const rareObservationCount = useMemo(
+    () => observations.filter((item) => item.rarity === 'rare' || item.rarity === 'special').length,
+    [observations],
+  );
+  const progressPercent = Math.min(
+    100,
+    Math.round((discoveredCandidateIds.size / speciesCandidates.length) * 100),
+  );
+  const fieldRank = observations.length >= 12 ? 'MASTER' : observations.length >= 6 ? 'ACE' : 'ROOKIE';
 
   async function resolveInitialLocation(options?: { preserveStatus?: boolean }) {
     const permission = await Location.requestForegroundPermissionsAsync();
@@ -126,19 +142,32 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="light-content" />
       <View style={styles.appFrame}>
         <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.title}>神山生物図鑑</Text>
-            <Text style={styles.subtitle}>植物と虫を撮って、自分だけの分布図を育てる</Text>
+          <View style={styles.headerGlow} />
+          <View style={{ flex: 1, gap: 8 }}>
+            <View>
+              <Text style={styles.kicker}>KAMIYAMA FIELD GUIDE</Text>
+              <Text style={styles.title}>神山生物図鑑</Text>
+              <Text style={styles.subtitle}>歩いて、撮って、発見ピンを増やす</Text>
+            </View>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
+            </View>
           </View>
           <View style={styles.progressBadge}>
             <Text style={styles.progressValue}>
               {discoveredCandidateIds.size}/{speciesCandidates.length}
             </Text>
-            <Text style={styles.progressLabel}>候補種</Text>
+            <Text style={styles.progressLabel}>DISCOVERED</Text>
           </View>
+        </View>
+
+        <View style={styles.hudRow}>
+          <HudStat label="RANK" value={fieldRank} />
+          <HudStat label="観察" value={observations.length.toString()} />
+          <HudStat label="レア" value={rareObservationCount.toString()} accent />
         </View>
 
         <View style={styles.statusBar}>
@@ -154,21 +183,25 @@ export default function App() {
                 onSelectObservation={setSelectedObservation}
               />
               {selectedObservation ? (
-                <View style={styles.selectionPanel}>
-                  <Text style={styles.selectionTitle}>{selectedObservation.customName}</Text>
+                <View style={[styles.selectionPanel, styles.selectionPanelActive]}>
+                  <View style={styles.selectionHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.selectionEyebrow}>DISCOVERY LOCKED</Text>
+                      <Text style={styles.selectionTitle}>{selectedObservation.customName}</Text>
+                    </View>
+                    <Text style={styles.rarityMedal}>{rarityLabel[selectedObservation.rarity]}</Text>
+                  </View>
                   <Text style={styles.selectionText}>
-                    {new Date(selectedObservation.observedAt).toLocaleString('ja-JP')} /{' '}
-                    {selectedObservation.environment}
+                    {new Date(selectedObservation.observedAt).toLocaleString('ja-JP')}
                   </Text>
-                  <Text style={styles.selectionText}>
-                    レア度: {selectedObservation.rarity.toUpperCase()}
-                  </Text>
+                  <Text style={styles.selectionText}>{selectedObservation.environment}</Text>
                 </View>
               ) : (
                 <View style={styles.selectionPanel}>
+                  <Text style={styles.selectionEyebrow}>FIELD RADAR</Text>
                   <Text style={styles.selectionTitle}>探索マップ</Text>
                   <Text style={styles.selectionText}>
-                    緑や水辺のレイヤーは観察したい環境の目安です。薄い既知ピンはGBIF由来の周辺記録、濃いピンはあなたの発見です。
+                    色つきエリアは自然環境の目安です。薄い既知ピンを起点に歩き、濃い発見ピンで自分だけの分布図を育てます。
                   </Text>
                 </View>
               )}
@@ -194,16 +227,19 @@ export default function App() {
         <View style={styles.tabBar}>
           <TabButton
             label="地図"
+            icon="MAP"
             active={activeTab === 'map'}
             onPress={() => setActiveTab('map')}
           />
           <TabButton
             label="撮影"
+            icon="SCAN"
             active={activeTab === 'capture'}
             onPress={() => setActiveTab('capture')}
           />
           <TabButton
             label="図鑑"
+            icon="DEX"
             active={activeTab === 'encyclopedia'}
             onPress={() => setActiveTab('encyclopedia')}
           />
@@ -213,7 +249,26 @@ export default function App() {
   );
 }
 
-function TabButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function HudStat({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <View style={[styles.hudStat, accent && styles.hudStatAccent]}>
+      <Text style={[styles.hudValue, accent && styles.hudValueAccent]}>{value}</Text>
+      <Text style={styles.hudLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function TabButton({
+  label,
+  icon,
+  active,
+  onPress,
+}: {
+  label: string;
+  icon: string;
+  active: boolean;
+  onPress: () => void;
+}) {
   return (
     <Pressable
       onPress={onPress}
@@ -223,6 +278,7 @@ function TabButton({ label, active, onPress }: { label: string; active: boolean;
         pressed && { opacity: 0.75 },
       ]}
     >
+      <Text style={[styles.tabIcon, active && styles.tabTextActive]}>{icon}</Text>
       <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
     </Pressable>
   );
@@ -231,111 +287,221 @@ function TabButton({ label, active, onPress }: { label: string; active: boolean;
 const styles = {
   screen: {
     flex: 1,
-    backgroundColor: '#e8ede6',
+    backgroundColor: '#07131d',
   },
   appFrame: {
     flex: 1,
     width: '100%' as const,
     maxWidth: 780,
     alignSelf: 'center' as const,
-    backgroundColor: '#fbfcf8',
+    backgroundColor: '#edf4ef',
   },
   header: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 12,
     paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 12,
-    backgroundColor: '#fbfcf8',
+    paddingTop: 18,
+    paddingBottom: 16,
+    backgroundColor: '#102233',
     borderBottomWidth: 1,
-    borderBottomColor: '#dde5dd',
+    borderBottomColor: '#244763',
+    overflow: 'hidden' as const,
   },
-  title: {
-    color: '#14231a',
-    fontSize: 22,
+  headerGlow: {
+    position: 'absolute' as const,
+    left: -90,
+    top: -80,
+    width: 240,
+    height: 210,
+    borderRadius: 120,
+    backgroundColor: 'rgba(45, 196, 147, 0.22)',
+  },
+  kicker: {
+    color: '#68dcb0',
+    fontSize: 11,
     fontWeight: '900' as const,
     letterSpacing: 0,
   },
+  title: {
+    color: '#f7fbff',
+    fontSize: 25,
+    fontWeight: '900' as const,
+    letterSpacing: 0,
+    marginTop: 2,
+  },
   subtitle: {
-    color: '#59675e',
-    fontSize: 12,
+    color: '#b9ceda',
+    fontSize: 13,
     marginTop: 4,
   },
+  progressTrack: {
+    height: 8,
+    borderRadius: 8,
+    overflow: 'hidden' as const,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  progressFill: {
+    height: '100%' as const,
+    borderRadius: 8,
+    backgroundColor: '#ffd24a',
+  },
   progressBadge: {
-    minWidth: 76,
-    minHeight: 56,
+    minWidth: 88,
+    minHeight: 72,
     borderRadius: 8,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    backgroundColor: '#26372d',
+    backgroundColor: '#f7fbff',
+    borderWidth: 3,
+    borderColor: '#ffd24a',
   },
   progressValue: {
-    color: '#ffffff',
-    fontSize: 18,
+    color: '#102233',
+    fontSize: 19,
     fontWeight: '900' as const,
   },
   progressLabel: {
-    color: '#c9d5cb',
-    fontSize: 11,
+    color: '#4f6678',
+    fontSize: 9,
+    fontWeight: '900' as const,
     marginTop: 1,
+  },
+  hudRow: {
+    flexDirection: 'row' as const,
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    backgroundColor: '#102233',
+  },
+  hudStat: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 8,
+    justifyContent: 'center' as const,
+    paddingHorizontal: 12,
+    backgroundColor: '#173149',
+    borderWidth: 1,
+    borderColor: '#294f6f',
+  },
+  hudStatAccent: {
+    backgroundColor: '#2e263f',
+    borderColor: '#7f67c9',
+  },
+  hudValue: {
+    color: '#f7fbff',
+    fontSize: 17,
+    fontWeight: '900' as const,
+  },
+  hudValueAccent: {
+    color: '#ffd24a',
+  },
+  hudLabel: {
+    color: '#9fb6c8',
+    fontSize: 10,
+    fontWeight: '900' as const,
+    marginTop: 2,
   },
   statusBar: {
     paddingHorizontal: 18,
     paddingVertical: 10,
-    backgroundColor: '#edf3ec',
+    backgroundColor: '#163047',
     borderBottomWidth: 1,
-    borderBottomColor: '#d7e0d8',
+    borderBottomColor: '#244763',
   },
   statusText: {
-    color: '#405146',
+    color: '#dcebf3',
     fontSize: 13,
     lineHeight: 18,
+    fontWeight: '700' as const,
   },
   content: {
     flex: 1,
     padding: 14,
+    backgroundColor: '#edf4ef',
   },
   selectionPanel: {
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#d7e0d8',
+    borderColor: '#b8cad1',
     backgroundColor: '#ffffff',
-    padding: 14,
+    padding: 16,
     gap: 4,
+    shadowColor: '#102233',
+    shadowOpacity: 0.1,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 7 },
+  },
+  selectionPanelActive: {
+    borderColor: '#ffd24a',
+    backgroundColor: '#fffdf3',
+  },
+  selectionHeader: {
+    flexDirection: 'row' as const,
+    gap: 10,
+    alignItems: 'flex-start' as const,
+  },
+  selectionEyebrow: {
+    color: '#2b86c5',
+    fontSize: 10,
+    fontWeight: '900' as const,
+    letterSpacing: 0,
   },
   selectionTitle: {
-    color: '#14231a',
-    fontSize: 17,
+    color: '#102233',
+    fontSize: 18,
     fontWeight: '900' as const,
+    marginTop: 2,
   },
   selectionText: {
-    color: '#59675e',
+    color: '#4f6678',
     lineHeight: 19,
     fontSize: 13,
+    fontWeight: '600' as const,
+  },
+  rarityMedal: {
+    overflow: 'hidden' as const,
+    borderRadius: 8,
+    backgroundColor: '#e85d4f',
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '900' as const,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
   tabBar: {
     flexDirection: 'row' as const,
-    gap: 8,
+    gap: 10,
     padding: 12,
     paddingBottom: 14,
-    backgroundColor: '#fbfcf8',
+    backgroundColor: '#102233',
     borderTopWidth: 1,
-    borderTopColor: '#d7e0d8',
+    borderTopColor: '#244763',
   },
   tabButton: {
     flex: 1,
-    minHeight: 46,
+    minHeight: 56,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     borderRadius: 8,
-    backgroundColor: '#edf3ec',
+    backgroundColor: '#173149',
+    borderWidth: 1,
+    borderColor: '#294f6f',
   },
   tabButtonActive: {
-    backgroundColor: '#e05a47',
+    backgroundColor: '#e85d4f',
+    borderColor: '#ffd24a',
+  },
+  tabIcon: {
+    color: '#9fb6c8',
+    fontSize: 10,
+    fontWeight: '900' as const,
+    marginBottom: 2,
   },
   tabText: {
-    color: '#314238',
+    color: '#dcebf3',
     fontWeight: '800' as const,
   },
   tabTextActive: {
