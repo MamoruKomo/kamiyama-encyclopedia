@@ -3,6 +3,8 @@ package com.mamorukomo.kamiyama.thinklet
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -12,6 +14,7 @@ import android.location.LocationManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
+import android.util.Base64
 import android.util.Log
 import android.view.KeyEvent
 import android.widget.Toast
@@ -179,16 +182,28 @@ class ThinkletObservationViewModel : ViewModel() {
             return false
         }
         val url = Uri.parse(WEB_APP_URL).buildUpon()
-            .appendQueryParameter("thinkletObservation", payload.toJson().toString())
+            .appendQueryParameter("thinklet", payload.toEncodedJson())
             .build()
             .toString()
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        Log.d(TAG, "openWebApp url=$url")
         return try {
             context.startActivity(intent)
+            _state.value = _state.value.copy(status = "Web図鑑を開きました。取り込み表示を確認してください。")
             Toast.makeText(context, "Web図鑑へ観察を送ります", Toast.LENGTH_SHORT).show()
             true
         } catch (_: ActivityNotFoundException) {
-            Toast.makeText(context, "Webを開けるアプリが見つかりません", Toast.LENGTH_SHORT).show()
+            copyUrlToClipboard(context, url)
+            _state.value = _state.value.copy(status = "Webを開けないため、連携URLをコピーしました。")
+            Toast.makeText(context, "連携URLをコピーしました", Toast.LENGTH_SHORT).show()
+            false
+        } catch (error: Throwable) {
+            copyUrlToClipboard(context, url)
+            _state.value = _state.value.copy(status = "Web連携に失敗。URLをコピーしました: ${error.message}")
+            Toast.makeText(context, "連携URLをコピーしました", Toast.LENGTH_SHORT).show()
             false
         }
     }
@@ -291,4 +306,16 @@ class ThinkletObservationViewModel : ViewModel() {
         const val BUTTON_COOLDOWN_MS = 1500L
         const val WEB_APP_URL = "https://mamorukomo.github.io/kamiyama-encyclopedia/"
     }
+}
+
+private fun ThinkletObservationPayload.toEncodedJson(): String {
+    return Base64.encodeToString(
+        toJson().toString().toByteArray(Charsets.UTF_8),
+        Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+    )
+}
+
+private fun copyUrlToClipboard(context: Context, url: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText("kamiyama-thinklet-url", url))
 }

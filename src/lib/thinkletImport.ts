@@ -20,8 +20,7 @@ export function readThinkletObservationFromUrl(): Observation | null {
     return null;
   }
 
-  const url = new URL(window.location.href);
-  const raw = url.searchParams.get('thinkletObservation');
+  const raw = readThinkletParam();
   if (!raw) {
     return null;
   }
@@ -63,11 +62,45 @@ export function clearThinkletObservationParam() {
     return;
   }
   const url = new URL(window.location.href);
-  if (!url.searchParams.has('thinkletObservation')) {
+  const hadSearchParam = url.searchParams.has('thinklet') || url.searchParams.has('thinkletObservation');
+  const hashParams = readHashParams(url);
+  const hadHashParam = hashParams.has('thinklet') || hashParams.has('thinkletObservation');
+  if (!hadSearchParam && !hadHashParam) {
     return;
   }
+  url.searchParams.delete('thinklet');
   url.searchParams.delete('thinkletObservation');
+  hashParams.delete('thinklet');
+  hashParams.delete('thinkletObservation');
+  url.hash = hashParams.size > 0 ? `#${hashParams.toString()}` : '';
   window.history.replaceState({}, '', url.toString());
+}
+
+export function hasThinkletObservationParam() {
+  return readThinkletParam() !== null;
+}
+
+function readThinkletParam() {
+  const url = new URL(window.location.href);
+  const hashParams = readHashParams(url);
+  const encoded = url.searchParams.get('thinklet') ?? hashParams.get('thinklet');
+  if (encoded) {
+    return decodeBase64Url(encoded);
+  }
+  return url.searchParams.get('thinkletObservation') ?? hashParams.get('thinkletObservation');
+}
+
+function readHashParams(url: URL) {
+  const hash = url.hash.startsWith('#') ? url.hash.slice(1) : url.hash;
+  return new URLSearchParams(hash);
+}
+
+function decodeBase64Url(value: string) {
+  const normalized = value.replaceAll('-', '+').replaceAll('_', '/');
+  const padding = '='.repeat((4 - (normalized.length % 4)) % 4);
+  const decoded = atob(normalized + padding);
+  const bytes = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
 }
 
 function normalizePoint(payload: ThinkletPayload): LatLng {

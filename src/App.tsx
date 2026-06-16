@@ -7,7 +7,11 @@ import { EncyclopediaPanel } from './components/EncyclopediaPanel';
 import { MapPanel } from './components/MapPanel';
 import { KAMIYAMA_CENTER, speciesCandidates } from './data/kamiyama';
 import { deleteObservation, loadObservations, saveObservation } from './lib/storage';
-import { clearThinkletObservationParam, readThinkletObservationFromUrl } from './lib/thinkletImport';
+import {
+  clearThinkletObservationParam,
+  hasThinkletObservationParam,
+  readThinkletObservationFromUrl,
+} from './lib/thinkletImport';
 import type { LatLng, Observation } from './types/domain';
 
 type Tab = 'map' | 'capture' | 'encyclopedia';
@@ -20,6 +24,7 @@ export default function App() {
   const [statusText, setStatusText] = useState('神山町周辺の軽い範囲で探索を開始できます。');
 
   useEffect(() => {
+    const hasIncomingThinkletObservation = hasThinkletObservationParam();
     loadObservations()
       .then(async (loadedObservations) => {
         const thinkletObservation = readThinkletObservationFromUrl();
@@ -35,6 +40,10 @@ export default function App() {
           await saveObservation(thinkletObservation);
           setObservations([thinkletObservation, ...loadedObservations]);
           setSelectedObservation(thinkletObservation);
+          setCurrentLocation({
+            latitude: thinkletObservation.latitude,
+            longitude: thinkletObservation.longitude,
+          });
           setStatusText('THINKLETから観察を取り込みました。');
         } else {
           setObservations(loadedObservations);
@@ -44,7 +53,7 @@ export default function App() {
         clearThinkletObservationParam();
       })
       .catch(() => setStatusText('ローカル図鑑の読み込みに失敗しました。'));
-    resolveInitialLocation();
+    resolveInitialLocation({ preserveStatus: hasIncomingThinkletObservation });
   }, []);
 
   const discoveredCandidateIds = useMemo(
@@ -52,11 +61,13 @@ export default function App() {
     [observations],
   );
 
-  async function resolveInitialLocation() {
+  async function resolveInitialLocation(options?: { preserveStatus?: boolean }) {
     const permission = await Location.requestForegroundPermissionsAsync();
     if (permission.status !== 'granted') {
       setCurrentLocation(KAMIYAMA_CENTER);
-      setStatusText('位置情報が未許可のため、神山町中心部から表示しています。');
+      if (!options?.preserveStatus) {
+        setStatusText('位置情報が未許可のため、神山町中心部から表示しています。');
+      }
       return;
     }
 
@@ -68,10 +79,14 @@ export default function App() {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
       });
-      setStatusText('現在地を取得しました。撮影すると発見ピンが作られます。');
+      if (!options?.preserveStatus) {
+        setStatusText('現在地を取得しました。撮影すると発見ピンが作られます。');
+      }
     } catch {
       setCurrentLocation(KAMIYAMA_CENTER);
-      setStatusText('現在地を取得できないため、神山町中心部から表示しています。');
+      if (!options?.preserveStatus) {
+        setStatusText('現在地を取得できないため、神山町中心部から表示しています。');
+      }
     }
   }
 
