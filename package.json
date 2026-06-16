@@ -5,7 +5,7 @@
   "main": "index.ts",
   "scripts": {
     "dev": "expo start --web",
-    "build": "expo export --platform web --output-dir dist",
+    "build": "expo export --platform web --output-dir dist && node scripts/fix-pages-base.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
