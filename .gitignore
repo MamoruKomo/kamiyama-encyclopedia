@@ -9,3 +9,8 @@ thinklet-android/.gradle/
 thinklet-android/app/build/
 sync-worker/node_modules/
 sync-worker/.wrangler/
+field-android/local.properties
+field-android/.gradle/
+field-android/.kotlin/
+field-android/build/
+field-android/app/build/
