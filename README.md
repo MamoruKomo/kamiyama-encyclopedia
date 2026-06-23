@@ -16,6 +16,27 @@
 
 本格AI同定は次フェーズに回し、MVPでは「植物 / 虫」の大分類と位置・季節・周辺記録から候補を出します。APIキーをGitHub Pagesに置かないため、サーバー不要で安全に動かせる範囲を優先しています。
 
+## ファイル構成
+
+```text
+src/                         GitHub Pages向けのExpo / React Native Webアプリ
+src/components/              Web版の地図・撮影・図鑑パネル
+src/data/kamiyama.ts         Web版の候補生物・自然レイヤーデータ
+src/lib/                     Web版の位置計算、IndexedDB保存、同期取り込み
+field-android/               Android Studioで開くスマホ向けネイティブAndroidアプリ
+field-android/app/src/main/java/com/mamorukomo/kamiyama/field/data/
+                             Android版の候補データ、位置計算、SQLite保存
+field-android/app/src/main/java/com/mamorukomo/kamiyama/field/ui/
+                             Android版の共通UI、ヘッダー、フォーマット
+field-android/app/src/main/java/com/mamorukomo/kamiyama/field/ui/screens/
+                             Android版の地図・撮影・図鑑画面
+thinklet-android/            THINKLET向けの撮影・同期用Androidアプリ
+sync-worker/                 Webを起動しない同期用Cloudflare Worker
+scripts/                     GitHub Pagesビルド後の補正スクリプト
+```
+
+`node_modules/`、`dist/`、`.expo/`、各Androidプロジェクトの `.gradle/` と `build/` は再生成できるignored生成物です。容量が厳しいときは、これらを削除候補として扱えます。
+
 ## 開発
 
 ```bash
