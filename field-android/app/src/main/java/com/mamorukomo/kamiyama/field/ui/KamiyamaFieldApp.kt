@@ -3,11 +3,8 @@ package com.mamorukomo.kamiyama.field.ui
 import android.net.Uri
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -17,7 +14,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import com.mamorukomo.kamiyama.field.BuildConfig
 import com.mamorukomo.kamiyama.field.LocationFix
 import com.mamorukomo.kamiyama.field.data.LatLng
@@ -29,10 +25,10 @@ import com.mamorukomo.kamiyama.field.ui.screens.DexScreen
 import com.mamorukomo.kamiyama.field.ui.screens.MapScreen
 import kotlinx.coroutines.launch
 
-private enum class AppTab(val label: String, val token: String) {
-    Map("地図", "MAP"),
-    Capture("撮影", "SCAN"),
-    Dex("図鑑", "DEX"),
+internal enum class AppTab(val label: String, val token: String, val title: String) {
+    Map("地図", "MAP", "探索マップ"),
+    Capture("撮影", "SCAN", "フィールドスキャン"),
+    Dex("図鑑", "DEX", "発見コレクション"),
 }
 
 @Composable
@@ -42,18 +38,18 @@ fun KamiyamaFieldApp(
     currentLocation: () -> LocationFix,
 ) {
     val colorScheme = darkColorScheme(
-        primary = Color(0xFF68DCB0),
-        secondary = Color(0xFFFFD24A),
-        tertiary = Color(0xFFE85D4F),
-        background = Color(0xFF07131D),
-        surface = Color(0xFF102233),
-        surfaceVariant = Color(0xFF173149),
-        onPrimary = Color(0xFF07131D),
-        onSecondary = Color(0xFF102233),
+        primary = FieldGreen,
+        secondary = FieldYellow,
+        tertiary = FieldCoral,
+        background = FieldInk,
+        surface = FieldPanel,
+        surfaceVariant = FieldPanelAlt,
+        onPrimary = FieldInk,
+        onSecondary = FieldInk,
         onTertiary = Color.White,
         onBackground = Color(0xFFEAF4F7),
         onSurface = Color(0xFFEAF4F7),
-        onSurfaceVariant = Color(0xFFB9CEDA),
+        onSurfaceVariant = FieldTextMuted,
     )
 
     MaterialTheme(colorScheme = colorScheme) {
@@ -73,20 +69,12 @@ fun KamiyamaFieldApp(
                 topBar = {
                     FieldHeader(
                         observations = observations,
+                        activeTab = activeTab,
                         message = message,
                     )
                 },
                 bottomBar = {
-                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                        AppTab.entries.forEach { tab ->
-                            NavigationBarItem(
-                                selected = activeTab == tab,
-                                onClick = { activeTab = tab },
-                                icon = { Text(tab.token, fontWeight = FontWeight.Black) },
-                                label = { Text(tab.label) },
-                            )
-                        }
-                    }
+                    FieldBottomBar(activeTab = activeTab, onTabSelected = { activeTab = it })
                 },
                 containerColor = MaterialTheme.colorScheme.background,
             ) { padding ->
