@@ -1,14 +1,25 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        file.inputStream().use { input -> load(input) }
+    }
+}
+
 android {
     namespace = "com.mamorukomo.kamiyama.thinklet"
     compileSdk = 36
-    val syncApiUrl = providers.gradleProperty("kamiyamaSyncApiUrl").orElse("")
-    val syncWriteToken = providers.gradleProperty("kamiyamaSyncWriteToken").orElse("")
+    val syncApiUrl = providers.gradleProperty("kamiyamaSyncApiUrl")
+        .orElse(localProperties.getProperty("kamiyamaSyncApiUrl", ""))
+    val syncWriteToken = providers.gradleProperty("kamiyamaSyncWriteToken")
+        .orElse(localProperties.getProperty("kamiyamaSyncWriteToken", ""))
 
     defaultConfig {
         applicationId = "com.mamorukomo.kamiyama.thinklet"
