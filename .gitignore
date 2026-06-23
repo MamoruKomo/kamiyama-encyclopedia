@@ -6,6 +6,8 @@ dist/
 npm-debug.log*
 thinklet-android/local.properties
 thinklet-android/.gradle/
+thinklet-android/.kotlin/
+thinklet-android/build/
 thinklet-android/app/build/
 sync-worker/node_modules/
 sync-worker/.wrangler/

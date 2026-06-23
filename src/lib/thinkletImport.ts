@@ -8,11 +8,21 @@ export type ThinkletPayload = {
   category?: string;
   label?: string;
   confidence?: number | null;
+  aiLabel?: string | null;
+  aiConfidence?: number | null;
+  aiAnalysis?: {
+    category?: string;
+    commonName?: string;
+    scientificName?: string | null;
+    confidence?: number;
+    reason?: string;
+  } | null;
   latitude?: number | null;
   longitude?: number | null;
   accuracyMeters?: number | null;
   observedAt?: number | string;
   photoUri?: string | null;
+  photoDataUrl?: string | null;
   receivedAt?: number;
 };
 
@@ -40,11 +50,17 @@ export function observationFromThinkletPayload(payload: ThinkletPayload): Observ
   const category = normalizeCategory(payload.category);
   const suggested = suggestCandidates(speciesCandidates, category, point, new Date(observedAt))[0]
     ?.candidate ?? null;
-  const label = payload.label?.trim() || suggested?.commonName || 'Thinklet観察';
+  const label = payload.aiAnalysis?.commonName?.trim()
+    || payload.aiLabel?.trim()
+    || payload.label?.trim()
+    || suggested?.commonName
+    || 'Thinklet観察';
 
   return {
     id: payload.id || `thinklet-${Date.parse(observedAt)}`,
-    photoUri: buildThinkletPlaceholder(label, category),
+    photoUri: payload.photoDataUrl?.startsWith('data:image/')
+      ? payload.photoDataUrl
+      : buildThinkletPlaceholder(label, category),
     category,
     candidateId: suggested?.id ?? null,
     customName: label,
@@ -57,8 +73,16 @@ export function observationFromThinkletPayload(payload: ThinkletPayload): Observ
     rarity: inferRarity(suggested, point, new Date(observedAt)),
     source: 'thinklet',
     externalPhotoUri: payload.photoUri ?? undefined,
-    aiLabel: payload.label,
-    aiConfidence: typeof payload.confidence === 'number' ? payload.confidence : null,
+    aiLabel: payload.aiAnalysis?.commonName ?? payload.aiLabel ?? payload.label,
+    aiConfidence: typeof payload.aiAnalysis?.confidence === 'number'
+      ? payload.aiAnalysis.confidence
+      : typeof payload.aiConfidence === 'number'
+        ? payload.aiConfidence
+        : typeof payload.confidence === 'number'
+          ? payload.confidence
+          : null,
+    aiScientificName: payload.aiAnalysis?.scientificName ?? null,
+    aiReason: payload.aiAnalysis?.reason,
   };
 }
 
@@ -142,6 +166,21 @@ function buildNote(payload: ThinkletPayload) {
       ? ` (${Math.round(payload.confidence * 100)}%)`
       : '';
     lines.push(`簡易ラベル: ${payload.label}${confidence}`);
+  }
+  if (payload.aiAnalysis?.commonName || payload.aiLabel) {
+    const name = payload.aiAnalysis?.commonName ?? payload.aiLabel;
+    const confidence = typeof payload.aiAnalysis?.confidence === 'number'
+      ? ` (${Math.round(payload.aiAnalysis.confidence * 100)}%)`
+      : typeof payload.aiConfidence === 'number'
+        ? ` (${Math.round(payload.aiConfidence * 100)}%)`
+        : '';
+    lines.push(`AI判定: ${name}${confidence}`);
+  }
+  if (payload.aiAnalysis?.scientificName) {
+    lines.push(`学名候補: ${payload.aiAnalysis.scientificName}`);
+  }
+  if (payload.aiAnalysis?.reason) {
+    lines.push(`判定根拠: ${payload.aiAnalysis.reason}`);
   }
   if (payload.photoUri) {
     lines.push(`写真はThinklet側に保存: ${payload.photoUri}`);

@@ -37,6 +37,9 @@ import com.mamorukomo.kamiyama.field.ui.formatDate
 internal fun DexScreen(
     padding: PaddingValues,
     observations: List<Observation>,
+    isSyncing: Boolean,
+    syncEnabled: Boolean,
+    onSync: () -> Unit,
     onDelete: (Observation) -> Unit,
 ) {
     val discovered = observations.mapNotNull { it.candidateId }.toSet().size
@@ -67,6 +70,12 @@ internal fun DexScreen(
                         "写真と位置で神山町の自分だけの分布図を育てます。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    OutlinedButton(
+                        enabled = syncEnabled && !isSyncing,
+                        onClick = onSync,
+                    ) {
+                        Text(if (isSyncing) "同期中" else "AI同期を取り込む")
+                    }
                     LinearProgressIndicator(
                         progress = { progress.coerceIn(0f, 1f) },
                         modifier = Modifier

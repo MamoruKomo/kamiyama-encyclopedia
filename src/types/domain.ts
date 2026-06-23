@@ -45,4 +45,6 @@ export type Observation = {
   externalPhotoUri?: string;
   aiLabel?: string;
   aiConfidence?: number | null;
+  aiScientificName?: string | null;
+  aiReason?: string;
 };

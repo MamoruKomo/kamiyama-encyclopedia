@@ -13,17 +13,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import com.mamorukomo.kamiyama.field.BuildConfig
 import com.mamorukomo.kamiyama.field.LocationFix
 import com.mamorukomo.kamiyama.field.data.LatLng
 import com.mamorukomo.kamiyama.field.data.Observation
 import com.mamorukomo.kamiyama.field.data.ObservationStore
+import com.mamorukomo.kamiyama.field.data.SyncClient
 import com.mamorukomo.kamiyama.field.ui.screens.CaptureScreen
 import com.mamorukomo.kamiyama.field.ui.screens.DexScreen
 import com.mamorukomo.kamiyama.field.ui.screens.MapScreen
+import kotlinx.coroutines.launch
 
 private enum class AppTab(val label: String, val token: String) {
     Map("地図", "MAP"),
@@ -57,6 +61,9 @@ fun KamiyamaFieldApp(
         var activeTab by remember { mutableStateOf(AppTab.Map) }
         var selectedObservation by remember { mutableStateOf<Observation?>(null) }
         var currentPoint by remember { mutableStateOf(currentLocation().point) }
+        var isSyncing by remember { mutableStateOf(false) }
+        val syncClient = remember { SyncClient(BuildConfig.SYNC_API_URL.trim()) }
+        val scope = rememberCoroutineScope()
         var message by remember {
             mutableStateOf("Android Studio版です。撮影するとGPSと時刻つきで図鑑に保存します。")
         }
@@ -117,6 +124,38 @@ fun KamiyamaFieldApp(
                     AppTab.Dex -> DexScreen(
                         padding = padding,
                         observations = observations,
+                        isSyncing = isSyncing,
+                        syncEnabled = syncClient.isConfigured,
+                        onSync = {
+                            if (!syncClient.isConfigured) {
+                                message = "同期API URLが未設定です。field-android/local.properties に kamiyamaSyncApiUrl を設定してください。"
+                            } else {
+                                scope.launch {
+                                    isSyncing = true
+                                    message = "同期APIからAI判定済み観察を取り込んでいます..."
+                                    runCatching {
+                                        val synced = syncClient.pullObservations()
+                                        val knownIds = observations.map { it.id }.toSet()
+                                        val fresh = synced.filter { it.id !in knownIds }
+                                        synced.forEach(store::saveObservation)
+                                        observations = store.loadObservations()
+                                        fresh.firstOrNull()?.let { observation ->
+                                            selectedObservation = observation
+                                            currentPoint = LatLng(observation.latitude, observation.longitude)
+                                            activeTab = AppTab.Map
+                                        }
+                                        message = if (fresh.isEmpty()) {
+                                            "同期APIに新しい観察はありません。"
+                                        } else {
+                                            "${fresh.size}件のAI判定済み観察を図鑑に登録しました。"
+                                        }
+                                    }.onFailure { error ->
+                                        message = "同期取り込みに失敗: ${error.message}"
+                                    }
+                                    isSyncing = false
+                                }
+                            }
+                        },
                         onDelete = { observation ->
                             store.deleteObservation(observation.id)
                             observations = store.loadObservations()

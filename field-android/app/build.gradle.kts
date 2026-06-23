@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.mamorukomo.kamiyama.field"
     compileSdk = 36
+    val syncApiUrl = providers.gradleProperty("kamiyamaSyncApiUrl").orElse("")
 
     defaultConfig {
         applicationId = "com.mamorukomo.kamiyama.field"
@@ -14,6 +15,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("String", "SYNC_API_URL", "\"${syncApiUrl.get()}\"")
     }
 
     buildTypes {
@@ -37,6 +39,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

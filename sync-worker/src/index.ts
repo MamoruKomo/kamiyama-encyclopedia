@@ -2,6 +2,8 @@ export interface Env {
   OBSERVATIONS: KVNamespace;
   ALLOWED_ORIGINS?: string;
   SYNC_WRITE_TOKEN?: string;
+  OPENAI_API_KEY?: string;
+  OPENAI_MODEL?: string;
 }
 
 type ThinkletObservationPayload = {
@@ -10,12 +12,26 @@ type ThinkletObservationPayload = {
   category?: string;
   label?: string;
   confidence?: number | null;
+  aiLabel?: string | null;
+  aiConfidence?: number | null;
+  aiAnalysis?: SpeciesAnalysis | null;
   latitude?: number | null;
   longitude?: number | null;
   accuracyMeters?: number | null;
   observedAt?: number | string;
   photoUri?: string | null;
+  photoBase64?: string | null;
+  photoMimeType?: string | null;
+  photoDataUrl?: string | null;
   receivedAt?: number;
+};
+
+type SpeciesAnalysis = {
+  category: 'plant' | 'insect' | 'unknown';
+  commonName: string;
+  scientificName?: string | null;
+  confidence: number;
+  reason: string;
 };
 
 const JSON_HEADERS = {
@@ -64,10 +80,21 @@ async function createObservation(
   const payload = await request.json<ThinkletObservationPayload>();
   const now = Date.now();
   const id = sanitizeId(payload.id) ?? `thinklet-${now}-${crypto.randomUUID()}`;
+  const photoDataUrl = buildPhotoDataUrl(payload);
+  const aiAnalysis = await analyzeSpeciesPhoto(payload, photoDataUrl, env);
   const normalized: ThinkletObservationPayload = {
     ...payload,
     id,
     source: 'THINKLET',
+    category: normalizeCategory(aiAnalysis?.category ?? payload.category),
+    label: aiAnalysis?.commonName ?? payload.label ?? 'Thinklet観察',
+    confidence: aiAnalysis?.confidence ?? payload.confidence ?? null,
+    aiLabel: aiAnalysis?.commonName ?? null,
+    aiConfidence: aiAnalysis?.confidence ?? null,
+    aiAnalysis,
+    photoBase64: undefined,
+    photoMimeType: undefined,
+    photoDataUrl,
     receivedAt: now,
   };
 
@@ -78,7 +105,7 @@ async function createObservation(
     },
   });
 
-  return json({ ok: true, id }, corsHeaders, 201);
+  return json({ ok: true, id, observation: normalized }, corsHeaders, 201);
 }
 
 async function listObservations(
@@ -189,4 +216,142 @@ function normalizeObservedAt(value: unknown): number {
     }
   }
   return Date.now();
+}
+
+function normalizeCategory(value: unknown): 'plant' | 'insect' {
+  return value === 'insect' ? 'insect' : 'plant';
+}
+
+function buildPhotoDataUrl(payload: ThinkletObservationPayload): string | null {
+  if (payload.photoDataUrl?.startsWith('data:image/')) {
+    return payload.photoDataUrl;
+  }
+  if (!payload.photoBase64) {
+    return null;
+  }
+  const mimeType = payload.photoMimeType?.startsWith('image/')
+    ? payload.photoMimeType
+    : 'image/jpeg';
+  return `data:${mimeType};base64,${payload.photoBase64}`;
+}
+
+async function analyzeSpeciesPhoto(
+  payload: ThinkletObservationPayload,
+  photoDataUrl: string | null,
+  env: Env,
+): Promise<SpeciesAnalysis | null> {
+  if (!photoDataUrl || !env.OPENAI_API_KEY) {
+    return null;
+  }
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: env.OPENAI_MODEL || 'gpt-4o-mini',
+      input: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: [
+                '神山町の自然観察アプリに登録するため、この写真の生物を判定してください。',
+                '対象は植物または虫です。断定しすぎず、画像から分かる範囲で答えてください。',
+                'JSONだけを返してください。',
+                '{"category":"plant|insect|unknown","commonName":"日本語名または未同定の植物/虫","scientificName":"学名またはnull","confidence":0.0,"reason":"短い根拠"}',
+                `端末側の簡易ラベル: ${payload.label ?? 'なし'}`,
+              ].join('\n'),
+            },
+            {
+              type: 'input_image',
+              image_url: photoDataUrl,
+            },
+          ],
+        },
+      ],
+      max_output_tokens: 500,
+    }),
+  });
+
+  if (!response.ok) {
+    console.error(JSON.stringify({
+      message: 'openai_analysis_failed',
+      status: response.status,
+      body: await response.text(),
+    }));
+    return null;
+  }
+
+  const data = await response.json<Record<string, unknown>>();
+  const outputText = extractOutputText(data);
+  const parsed = parseJsonObject(outputText);
+  if (!parsed) {
+    console.error(JSON.stringify({ message: 'openai_analysis_parse_failed', outputText }));
+    return null;
+  }
+
+  const category = parsed.category === 'insect' || parsed.category === 'plant'
+    ? parsed.category
+    : 'unknown';
+  const commonName = typeof parsed.commonName === 'string' && parsed.commonName.trim()
+    ? parsed.commonName.trim()
+    : payload.label ?? '未同定';
+  const scientificName = typeof parsed.scientificName === 'string' && parsed.scientificName.trim()
+    ? parsed.scientificName.trim()
+    : null;
+  const confidence = typeof parsed.confidence === 'number'
+    ? Math.max(0, Math.min(1, parsed.confidence))
+    : 0.5;
+  const reason = typeof parsed.reason === 'string' && parsed.reason.trim()
+    ? parsed.reason.trim()
+    : '画像AIによる推定です。';
+
+  return { category, commonName, scientificName, confidence, reason };
+}
+
+function extractOutputText(data: Record<string, unknown>): string {
+  if (typeof data.output_text === 'string') {
+    return data.output_text;
+  }
+  const output = Array.isArray(data.output) ? data.output : [];
+  return output
+    .flatMap((item) => {
+      if (!item || typeof item !== 'object') {
+        return [];
+      }
+      const content = (item as { content?: unknown }).content;
+      return Array.isArray(content) ? content : [];
+    })
+    .map((content) => {
+      if (!content || typeof content !== 'object') {
+        return '';
+      }
+      const text = (content as { text?: unknown }).text;
+      return typeof text === 'string' ? text : '';
+    })
+    .join('\n')
+    .trim();
+}
+
+function parseJsonObject(value: string): Record<string, unknown> | null {
+  const cleaned = value
+    .trim()
+    .replace(/^```(?:json)?/i, '')
+    .replace(/```$/i, '')
+    .trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(cleaned.slice(start, end + 1));
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
 }

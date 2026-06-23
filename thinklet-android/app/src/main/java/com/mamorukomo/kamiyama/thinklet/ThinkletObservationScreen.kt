@@ -134,15 +134,15 @@ private fun ThinkletCameraContent(viewModel: ThinkletObservationViewModel) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         enabled = state.isCameraReady && !state.isCapturing,
-                        onClick = { viewModel.captureObservation(context) },
+                        onClick = { viewModel.captureObservation(context, sendAfterCapture = true) },
                     ) {
-                        Text(if (state.isCapturing) "撮影中" else "撮影")
+                        Text(if (state.isCapturing) "撮影中" else "撮影→AI送信")
                     }
                     Button(
                         enabled = state.latestPayload != null && !state.isSending,
                         onClick = { viewModel.sendObservationToSyncApi(context) },
                     ) {
-                        Text(if (state.isSending) "送信中" else "同期送信")
+                        Text(if (state.isSending) "送信中" else "再送信")
                     }
                     Button(
                         enabled = state.latestPayload != null,
@@ -152,7 +152,7 @@ private fun ThinkletCameraContent(viewModel: ThinkletObservationViewModel) {
                     }
                 }
                 Text(
-                    text = "サイドボタンでも撮影できます",
+                    text = "サイドボタンでも撮影→AI送信できます",
                     color = Color(0xFFD9E5DC),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 8.dp)

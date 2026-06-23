@@ -1,6 +1,7 @@
 package com.mamorukomo.kamiyama.field.ui
 
 import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -32,8 +33,13 @@ internal fun ObservationImage(uri: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val bitmap = remember(uri) {
         runCatching {
-            context.contentResolver.openInputStream(uri.toUri())?.use { stream ->
-                BitmapFactory.decodeStream(stream)?.asImageBitmap()
+            if (uri.startsWith("data:image/") && uri.contains("base64,")) {
+                val bytes = Base64.decode(uri.substringAfter("base64,"), Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            } else {
+                context.contentResolver.openInputStream(uri.toUri())?.use { stream ->
+                    BitmapFactory.decodeStream(stream)?.asImageBitmap()
+                }
             }
         }.getOrNull()
     }
