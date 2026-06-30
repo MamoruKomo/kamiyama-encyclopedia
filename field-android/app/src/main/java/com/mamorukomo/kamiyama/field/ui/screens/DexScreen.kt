@@ -119,13 +119,23 @@ private fun DexHero(
                         color = FieldTextMuted,
                     )
                 }
-                Surface(color = FieldGreen, contentColor = FieldInk, shape = CircleShape) {
+                Surface(
+                    onClick = onSync,
+                    enabled = syncEnabled && !isSyncing,
+                    color = if (syncEnabled) FieldGreen else Color.White.copy(alpha = 0.12f),
+                    contentColor = if (syncEnabled) FieldInk else FieldTextMuted,
+                    shape = CircleShape,
+                ) {
                     Column(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text("${(progress * 100).toInt()}%", fontWeight = FontWeight.Black)
-                        Text("SYNC", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
+                        Text(
+                            if (isSyncing) "WAIT" else "SYNC",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Black,
+                        )
                     }
                 }
             }
