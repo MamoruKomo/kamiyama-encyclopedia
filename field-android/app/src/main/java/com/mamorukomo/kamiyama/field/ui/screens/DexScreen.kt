@@ -31,6 +31,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mamorukomo.kamiyama.field.data.Observation
 import com.mamorukomo.kamiyama.field.data.Rarity
+import com.mamorukomo.kamiyama.field.data.SpeciesCandidate
+import com.mamorukomo.kamiyama.field.data.SpeciesCategory
 import com.mamorukomo.kamiyama.field.data.SpeciesCandidates
 import com.mamorukomo.kamiyama.field.ui.ExpeditionPanel
 import com.mamorukomo.kamiyama.field.ui.FieldCoral
@@ -41,6 +43,7 @@ import com.mamorukomo.kamiyama.field.ui.FieldPanel
 import com.mamorukomo.kamiyama.field.ui.FieldSky
 import com.mamorukomo.kamiyama.field.ui.FieldTextMuted
 import com.mamorukomo.kamiyama.field.ui.FieldViolet
+import com.mamorukomo.kamiyama.field.ui.FieldYellow
 import com.mamorukomo.kamiyama.field.ui.MetricTile
 import com.mamorukomo.kamiyama.field.ui.ObservationImage
 import com.mamorukomo.kamiyama.field.ui.RarityPill
@@ -61,6 +64,7 @@ internal fun DexScreen(
     val discovered = observations.mapNotNull { it.candidateId }.toSet().size
     val rare = observations.count { it.rarity == Rarity.Rare || it.rarity == Rarity.Special }
     val progress = discovered / SpeciesCandidates.size.toFloat()
+    val discoveredIds = observations.mapNotNull { it.candidateId }.toSet()
 
     LazyColumn(
         modifier = Modifier
@@ -80,6 +84,9 @@ internal fun DexScreen(
                 syncEnabled = syncEnabled,
                 onSync = onSync,
             )
+        }
+        item {
+            InsectRarityCatalog(discoveredIds = discoveredIds)
         }
         if (observations.isEmpty()) {
             item {
@@ -159,6 +166,95 @@ private fun DexHero(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = onSync,
             )
+        }
+    }
+}
+
+@Composable
+private fun InsectRarityCatalog(discoveredIds: Set<String>) {
+    val insects = SpeciesCandidates
+        .filter { it.category == SpeciesCategory.Insect }
+        .sortedWith(compareByDescending<SpeciesCandidate> { it.rarity.score }.thenBy { it.commonName })
+    val discoveredCount = insects.count { it.id in discoveredIds }
+
+    ExpeditionPanel(tint = FieldYellow, contentPadding = PaddingValues(14.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(modifier = Modifier.weight(1f)) {
+                    SectionLabel("INSECT RARITY", FieldYellow)
+                    Text("昆虫レア図鑑", color = Color.White, fontWeight = FontWeight.Black)
+                    Text(
+                        "AI分類で一致した虫は、種ごとのレア度つきで記録されます。",
+                        color = FieldTextMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                StatusPill("$discoveredCount/${insects.size}", FieldYellow)
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                insects.forEach { insect ->
+                    InsectRarityRow(
+                        insect = insect,
+                        discovered = insect.id in discoveredIds,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InsectRarityRow(insect: SpeciesCandidate, discovered: Boolean) {
+    val tint = insect.rarity.accentColor()
+    Surface(
+        color = if (discovered) tint.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.055f),
+        shape = RoundedCornerShape(18.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (discovered) tint.copy(alpha = 0.54f) else Color.White.copy(alpha = 0.1f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(tint.copy(alpha = if (discovered) 1f else 0.2f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("虫", color = if (discovered) FieldInk else tint, fontWeight = FontWeight.Black)
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    insect.commonName,
+                    color = Color.White,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    insect.scientificName,
+                    color = FieldTextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    insect.hint,
+                    color = FieldTextMuted.copy(alpha = 0.84f),
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                RarityPill(insect.rarity)
+                StatusPill(if (discovered) "DISCOVERED" else "LOCKED", if (discovered) FieldGreen else FieldTextMuted)
+            }
         }
     }
 }
