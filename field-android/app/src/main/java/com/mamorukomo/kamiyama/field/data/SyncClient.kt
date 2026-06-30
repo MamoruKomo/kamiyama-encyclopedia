@@ -65,10 +65,12 @@ class SyncClient(private val endpoint: String) {
         val candidate = matchedCandidate
             ?: if (isThinklet) null else suggestCandidates(category, point, observedAt).firstOrNull()?.candidate
         val note = buildNote(this, analysis)
-        val rarity = if (isThinklet && candidate == null) {
-            Rarity.Common
-        } else {
-            inferRarity(candidate, point, observedAt)
+        val aiRarity = analysis?.optRarity()
+        val rarity = when {
+            aiRarity != null -> aiRarity
+            category == SpeciesCategory.Insect && candidate != null -> candidate.rarity
+            isThinklet && candidate == null -> Rarity.Common
+            else -> inferRarity(candidate, point, observedAt)
         }
 
         return Observation(
@@ -125,6 +127,8 @@ class SyncClient(private val endpoint: String) {
             ?.let { lines += "学名候補: $it" }
         analysis?.optText("reason")
             ?.let { lines += "判定根拠: $it" }
+        analysis?.optRarity()
+            ?.let { lines += "AIレア度: ${it.label}" }
         item.optText("photoUri")
             ?.let { uri -> lines += "Thinklet写真: ${uri.substringAfterLast('/')}" }
         return lines.joinToString("\n")
@@ -141,6 +145,16 @@ class SyncClient(private val endpoint: String) {
 
     private fun JSONObject.optDoubleOrNull(name: String): Double? {
         return if (has(name) && !isNull(name)) optDouble(name) else null
+    }
+
+    private fun JSONObject.optRarity(): Rarity? {
+        return when (optText("rarity")?.lowercase()) {
+            "common" -> Rarity.Common
+            "uncommon" -> Rarity.Uncommon
+            "rare" -> Rarity.Rare
+            "special" -> Rarity.Special
+            else -> null
+        }
     }
 
     private fun normalizeObservedAt(value: Any?): Long {

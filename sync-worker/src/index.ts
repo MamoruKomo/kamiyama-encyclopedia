@@ -30,9 +30,50 @@ type SpeciesAnalysis = {
   category: 'plant' | 'insect' | 'unknown';
   commonName: string;
   scientificName?: string | null;
+  rarity?: RarityValue | null;
   confidence: number;
   reason: string;
 };
+
+type RarityValue = 'common' | 'uncommon' | 'rare' | 'special';
+
+const INSECT_CANDIDATES = [
+  {
+    commonName: 'キイロスズメバチ',
+    scientificName: 'Vespa simillima xanthoptera',
+    rarity: 'uncommon',
+    hint: '黄色と黒の大型ハチ。安全上、巣や個体に近づきすぎない。',
+  },
+  {
+    commonName: 'ニホンミツバチ',
+    scientificName: 'Apis cerana',
+    rarity: 'rare',
+    hint: '花に来る小型のミツバチ。全体に黒っぽく、腹部の縞が見えることがある。',
+  },
+  {
+    commonName: 'テングチョウ',
+    scientificName: 'Libythea lepita',
+    rarity: 'uncommon',
+    hint: '顔先が突き出て見える蝶。翅は褐色から橙色の模様。',
+  },
+  {
+    commonName: 'ベニシジミ',
+    scientificName: 'Lycaena phlaeas daimio',
+    rarity: 'common',
+    hint: '小型で橙色が目立つ蝶。草地や畑の縁に多い。',
+  },
+  {
+    commonName: 'ツマグロヒョウモン',
+    scientificName: 'Argynnis hyperbius',
+    rarity: 'common',
+    hint: '橙色のヒョウ柄模様を持つ蝶。花の多い場所で見つかりやすい。',
+  },
+] as const satisfies ReadonlyArray<{
+  commonName: string;
+  scientificName: string;
+  rarity: RarityValue;
+  hint: string;
+}>;
 
 const JSON_HEADERS = {
   'content-type': 'application/json; charset=utf-8',
@@ -260,9 +301,14 @@ async function analyzeSpeciesPhoto(
               type: 'input_text',
               text: [
                 '神山町の自然観察アプリに登録するため、この写真の生物を判定してください。',
-                '対象は植物または虫です。断定しすぎず、画像から分かる範囲で答えてください。',
+                '特に昆虫を分類できるように、虫が写っている場合は下の候補表と照合してください。',
+                '候補表に強く一致する昆虫は、その日本語名・学名・レア度を返してください。',
+                '候補表にない虫、または画像が不明瞭な虫は commonName を「未同定の虫」、scientificName を null、rarity を "common" にしてください。',
+                '植物または虫ではない場合は category を "unknown" にしてください。',
+                '断定しすぎず、画像から分かる範囲で答えてください。',
+                `昆虫候補表: ${JSON.stringify(INSECT_CANDIDATES)}`,
                 'JSONだけを返してください。',
-                '{"category":"plant|insect|unknown","commonName":"日本語名または未同定の植物/虫","scientificName":"学名またはnull","confidence":0.0,"reason":"短い根拠"}',
+                '{"category":"plant|insect|unknown","commonName":"日本語名または未同定の植物/虫","scientificName":"学名またはnull","rarity":"common|uncommon|rare|special|null","confidence":0.0,"reason":"短い根拠"}',
                 `端末側の簡易ラベル: ${payload.label ?? 'なし'}`,
               ].join('\n'),
             },
@@ -303,6 +349,12 @@ async function analyzeSpeciesPhoto(
   const scientificName = typeof parsed.scientificName === 'string' && parsed.scientificName.trim()
     ? parsed.scientificName.trim()
     : null;
+  const matchedInsect = category === 'insect'
+    ? findInsectCandidate(commonName, scientificName)
+    : null;
+  const rarity = matchedInsect?.rarity
+    ?? normalizeRarity(parsed.rarity)
+    ?? (category === 'insect' ? 'common' : null);
   const confidence = typeof parsed.confidence === 'number'
     ? Math.max(0, Math.min(1, parsed.confidence))
     : 0.5;
@@ -310,7 +362,33 @@ async function analyzeSpeciesPhoto(
     ? parsed.reason.trim()
     : '画像AIによる推定です。';
 
-  return { category, commonName, scientificName, confidence, reason };
+  return {
+    category,
+    commonName: matchedInsect?.commonName ?? commonName,
+    scientificName: matchedInsect?.scientificName ?? scientificName,
+    rarity,
+    confidence,
+    reason,
+  };
+}
+
+function findInsectCandidate(
+  commonName: string,
+  scientificName: string | null,
+): (typeof INSECT_CANDIDATES)[number] | null {
+  return INSECT_CANDIDATES.find((candidate) => (
+    candidate.commonName === commonName ||
+    candidate.scientificName === scientificName
+  )) ?? null;
+}
+
+function normalizeRarity(value: unknown): RarityValue | null {
+  return value === 'common' ||
+    value === 'uncommon' ||
+    value === 'rare' ||
+    value === 'special'
+    ? value
+    : null;
 }
 
 function extractOutputText(data: Record<string, unknown>): string {

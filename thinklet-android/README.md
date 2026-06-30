@@ -44,6 +44,16 @@ kamiyamaSyncApiUrl=https://YOUR_WORKER_URL
 kamiyamaSyncWriteToken=YOUR_SYNC_WRITE_TOKEN
 ```
 
+昆虫をAI分類するには、同期API側にOpenAI APIキーも設定してください。
+
+```bash
+cd ../sync-worker
+npx wrangler secret put OPENAI_API_KEY
+npx wrangler deploy
+```
+
+AIは写真から昆虫候補を判定し、キイロスズメバチ、ニホンミツバチ、テングチョウ、ベニシジミ、ツマグロヒョウモンなどの候補に一致した場合は、種名とレア度をスマホ側の図鑑へ同期します。
+
 ## 注意
 
 GitHub Pagesのみの構成では、ネイティブアプリからWeb IndexedDBへ写真本体を直接同期するのが難しいため、THINKLETは同期APIへ送信し、スマホ側アプリが同期APIから取り込む構成にしています。
