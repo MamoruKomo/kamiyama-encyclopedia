@@ -47,27 +47,34 @@ class SyncClient(private val endpoint: String) {
 
     private fun JSONObject.toObservation(): Observation {
         val analysis = optJSONObject("aiAnalysis")
+        val isThinklet = optText("source") == "THINKLET" || optText("id")?.startsWith("thinklet-") == true
         val point = LatLng(
             latitude = optDoubleOrNull("latitude") ?: KamiyamaCenter.latitude,
             longitude = optDoubleOrNull("longitude") ?: KamiyamaCenter.longitude,
         )
         val observedAt = normalizeObservedAt(opt("observedAt"))
-        val category = when (analysis?.optString("category") ?: optString("category")) {
+        val category = when (analysis?.optText("category") ?: optText("category")) {
             "insect" -> SpeciesCategory.Insect
             else -> SpeciesCategory.Plant
         }
-        val label = analysis?.optString("commonName")?.takeIf { it.isNotBlank() }
-            ?: optString("aiLabel").takeIf { it.isNotBlank() }
-            ?: optString("label").takeIf { it.isNotBlank() }
+        val label = analysis?.optText("commonName")
+            ?: optText("aiLabel")
+            ?: optText("label")
             ?: "Thinklet観察"
-        val candidate = matchCandidate(category, analysis, label)
-            ?: suggestCandidates(category, point, observedAt).firstOrNull()?.candidate
+        val matchedCandidate = matchCandidate(category, analysis, label)
+        val candidate = matchedCandidate
+            ?: if (isThinklet) null else suggestCandidates(category, point, observedAt).firstOrNull()?.candidate
         val note = buildNote(this, analysis)
+        val rarity = if (isThinklet && candidate == null) {
+            Rarity.Common
+        } else {
+            inferRarity(candidate, point, observedAt)
+        }
 
         return Observation(
-            id = optString("id").takeIf { it.isNotBlank() } ?: "thinklet-$observedAt",
-            photoUri = optString("photoDataUrl").takeIf { it.startsWith("data:image/") }
-                ?: optString("photoUri").takeIf { it.isNotBlank() }
+            id = optText("id") ?: "thinklet-$observedAt",
+            photoUri = optText("photoDataUrl")?.takeIf { it.startsWith("data:image/") }
+                ?: optText("photoUri")
                 ?: buildPhotoPlaceholder(label, category),
             category = category,
             candidateId = candidate?.id,
@@ -78,7 +85,7 @@ class SyncClient(private val endpoint: String) {
             accuracy = optDoubleOrNull("accuracyMeters")?.toFloat(),
             observedAtMillis = observedAt,
             environment = describeEnvironment(point),
-            rarity = inferRarity(candidate, point, observedAt),
+            rarity = rarity,
         )
     }
 
@@ -87,7 +94,7 @@ class SyncClient(private val endpoint: String) {
         analysis: JSONObject?,
         label: String,
     ): SpeciesCandidate? {
-        val scientificName = analysis?.optString("scientificName")?.takeIf { it.isNotBlank() }
+        val scientificName = analysis?.optText("scientificName")
         return SpeciesCandidates.firstOrNull { candidate ->
             candidate.category == category &&
                 (candidate.commonName == label || scientificName == candidate.scientificName)
@@ -96,7 +103,7 @@ class SyncClient(private val endpoint: String) {
 
     private fun buildNote(item: JSONObject, analysis: JSONObject?): String {
         val lines = mutableListOf("THINKLETから同期API経由で取り込んだ観察です。")
-        val label = item.optString("label").takeIf { it.isNotBlank() }
+        val label = item.optText("label")
         val confidence = item.optDoubleOrNull("confidence")
         if (label != null) {
             lines += if (confidence != null) {
@@ -105,7 +112,7 @@ class SyncClient(private val endpoint: String) {
                 "端末ラベル: $label"
             }
         }
-        val aiName = analysis?.optString("commonName")?.takeIf { it.isNotBlank() }
+        val aiName = analysis?.optText("commonName")
         val aiConfidence = analysis?.optDoubleOrNull("confidence")
         if (aiName != null) {
             lines += if (aiConfidence != null) {
@@ -114,16 +121,22 @@ class SyncClient(private val endpoint: String) {
                 "AI判定: $aiName"
             }
         }
-        analysis?.optString("scientificName")
-            ?.takeIf { it.isNotBlank() }
+        analysis?.optText("scientificName")
             ?.let { lines += "学名候補: $it" }
-        analysis?.optString("reason")
-            ?.takeIf { it.isNotBlank() }
+        analysis?.optText("reason")
             ?.let { lines += "判定根拠: $it" }
-        item.optString("photoUri")
-            .takeIf { it.isNotBlank() }
-            ?.let { lines += "Thinklet保存先: $it" }
+        item.optText("photoUri")
+            ?.let { uri -> lines += "Thinklet写真: ${uri.substringAfterLast('/')}" }
         return lines.joinToString("\n")
+    }
+
+    private fun JSONObject.optText(name: String): String? {
+        if (!has(name) || isNull(name)) {
+            return null
+        }
+        return optString(name)
+            .trim()
+            .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
     }
 
     private fun JSONObject.optDoubleOrNull(name: String): Double? {

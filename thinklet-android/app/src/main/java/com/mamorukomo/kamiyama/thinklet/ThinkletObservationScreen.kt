@@ -1,15 +1,12 @@
 package com.mamorukomo.kamiyama.thinklet
 
 import android.Manifest
-import androidx.camera.compose.CameraXViewfinder
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -74,90 +71,80 @@ fun ThinkletObservationScreen(viewModel: ThinkletObservationViewModel) {
 private fun ThinkletCameraContent(viewModel: ThinkletObservationViewModel) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val surfaceRequest by viewModel.surfaceRequest.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(lifecycleOwner) {
         viewModel.bindCamera(context, lifecycleOwner)
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        surfaceRequest?.let { request ->
-            CameraXViewfinder(
-                surfaceRequest = request,
-                modifier = Modifier.fillMaxSize()
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF07130F))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Column(modifier = Modifier.widthIn(max = 520.dp)) {
+            Text(
+                text = "KAMIYAMA CAPTURE",
+                color = Color(0xFF63E6BE),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
             )
-        }
+            Text(
+                text = "THINKLETは撮影専用です。図鑑確認はスマホ側で行います。",
+                color = Color(0xFFD9E5DC),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+            Text(
+                text = state.status,
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 12.dp)
+            )
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Color(0xCC122018))
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Column(modifier = Modifier.widthIn(max = 520.dp)) {
+            state.latestPayload?.let { payload ->
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "神山図鑑 Thinklet",
+                    text = "最新: ${payload.label} / ${payload.category}",
                     color = Color.White,
-                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
-                Text(
-                    text = state.status,
-                    color = Color(0xFFD9E5DC),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-
-                state.latestPayload?.let { payload ->
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "候補: ${payload.label} / ${payload.category}",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    val locationText = if (payload.latitude != null && payload.longitude != null) {
-                        "${payload.latitude.formatCoord()}, ${payload.longitude.formatCoord()}"
-                    } else {
-                        "位置情報なし"
-                    }
-                    Text(
-                        text = locationText,
-                        color = Color(0xFFD9E5DC),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        enabled = state.isCameraReady && !state.isCapturing,
-                        onClick = { viewModel.captureObservation(context, sendAfterCapture = true) },
-                    ) {
-                        Text(if (state.isCapturing) "撮影中" else "撮影→AI送信")
-                    }
-                    Button(
-                        enabled = state.latestPayload != null && !state.isSending,
-                        onClick = { viewModel.sendObservationToSyncApi(context) },
-                    ) {
-                        Text(if (state.isSending) "送信中" else "再送信")
-                    }
-                    Button(
-                        enabled = state.latestPayload != null,
-                        onClick = { viewModel.openWebApp(context) },
-                    ) {
-                        Text("Webで確認")
-                    }
+                val locationText = if (payload.latitude != null && payload.longitude != null) {
+                    "${payload.latitude.formatCoord()}, ${payload.longitude.formatCoord()}"
+                } else {
+                    "位置情報なし"
                 }
                 Text(
-                    text = "サイドボタンでも撮影→AI送信できます",
+                    text = locationText,
                     color = Color(0xFFD9E5DC),
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 8.dp)
                 )
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    enabled = state.isCameraReady && !state.isCapturing && !state.isSending,
+                    onClick = { viewModel.captureObservation(context, sendAfterCapture = true) },
+                ) {
+                    Text(if (state.isCapturing) "撮影中" else "テスト撮影→送信")
+                }
+                Button(
+                    enabled = state.latestPayload != null && !state.isSending,
+                    onClick = { viewModel.sendObservationToSyncApi(context) },
+                ) {
+                    Text(if (state.isSending) "送信中" else "再送信")
+                }
+            }
+            Text(
+                text = "実運用: サイドボタンで撮影→同期API送信",
+                color = Color(0xFFD9E5DC),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 10.dp)
+            )
         }
     }
 }

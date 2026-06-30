@@ -33,7 +33,6 @@ import com.mamorukomo.kamiyama.field.data.Observation
 import com.mamorukomo.kamiyama.field.data.Rarity
 import com.mamorukomo.kamiyama.field.data.SpeciesCandidates
 import com.mamorukomo.kamiyama.field.ui.ExpeditionPanel
-import com.mamorukomo.kamiyama.field.ui.FieldButton
 import com.mamorukomo.kamiyama.field.ui.FieldCoral
 import com.mamorukomo.kamiyama.field.ui.FieldGreen
 import com.mamorukomo.kamiyama.field.ui.FieldInk
@@ -181,6 +180,33 @@ private fun EmptyDex() {
 @Composable
 private fun ObservationCard(observation: Observation, onDelete: () -> Unit) {
     val species = SpeciesCandidates.find { it.id == observation.candidateId }
+    val isThinklet = observation.note.contains("THINKLET")
+    val hasAi = observation.note.contains("AI判定")
+    val displayName = if (isThinklet && species == null) {
+        "要確認: ${observation.customName}"
+    } else {
+        observation.customName
+    }
+    val speciesLine = species?.scientificName
+        ?: if (isThinklet) "AI/端末ラベルから候補確認中" else "未同定"
+    val locationLine = buildString {
+        append(observation.environment)
+        append(" / ")
+        append(observation.latitude.format5())
+        append(", ")
+        append(observation.longitude.format5())
+        observation.accuracy?.let { accuracy ->
+            append(" +/-")
+            append(accuracy.toInt())
+            append("m")
+        }
+    }
+    val notePreview = observation.note
+        .lineSequence()
+        .filterNot { it.startsWith("THINKLETから") }
+        .take(2)
+        .joinToString(" / ")
+
     ExpeditionPanel(
         tint = observation.rarity.accentColor(),
         contentPadding = PaddingValues(12.dp),
@@ -207,6 +233,23 @@ private fun ObservationCard(observation: Observation, onDelete: () -> Unit) {
                         fontWeight = FontWeight.Black,
                     )
                 }
+                if (isThinklet) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp),
+                        color = FieldInk.copy(alpha = 0.82f),
+                        shape = CircleShape,
+                        contentColor = FieldGreen,
+                    ) {
+                        Text(
+                            "T",
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Black,
+                        )
+                    }
+                }
             }
             Column(
                 modifier = Modifier.weight(1f),
@@ -214,48 +257,82 @@ private fun ObservationCard(observation: Observation, onDelete: () -> Unit) {
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Column(modifier = Modifier.weight(1f)) {
-                        SectionLabel(observation.category.chip, observation.category.accentColor())
+                        SectionLabel(
+                            if (isThinklet) "THINKLET ${observation.category.chip}" else observation.category.chip,
+                            observation.category.accentColor(),
+                        )
                         Text(
-                            observation.customName,
+                            displayName,
                             color = Color.White,
                             fontWeight = FontWeight.Black,
-                            maxLines = 1,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
                     RarityPill(observation.rarity)
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (isThinklet) {
+                        StatusPill("SYNCED", FieldViolet)
+                    }
+                    if (hasAi) {
+                        StatusPill("AI", FieldGreen)
+                    }
+                    StatusPill(
+                        if (observation.accuracy != null) "GPS" else "NO GPS",
+                        if (observation.accuracy != null) FieldSky else FieldCoral,
+                    )
+                }
                 Text(
-                    species?.scientificName ?: "未同定",
+                    speciesLine,
                     color = FieldTextMuted,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Text(formatDate(observation.observedAtMillis), color = FieldTextMuted, style = MaterialTheme.typography.bodySmall)
                 Text(
-                    "${observation.environment} / ${observation.latitude.format5()}, ${observation.longitude.format5()}",
+                    locationLine,
                     color = FieldTextMuted,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (observation.note.isNotBlank()) {
+                if (notePreview.isNotBlank()) {
                     Text(
-                        observation.note,
+                        notePreview,
                         color = Color.White.copy(alpha = 0.82f),
                         style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                FieldButton(
-                    text = "削除",
-                    tint = Color.White.copy(alpha = 0.12f),
+                FieldOutlineButton(
+                    text = "この記録を削除",
+                    tint = FieldCoral,
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onDelete,
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun StatusPill(text: String, tint: Color, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        color = tint.copy(alpha = 0.16f),
+        shape = CircleShape,
+        border = androidx.compose.foundation.BorderStroke(1.dp, tint.copy(alpha = 0.34f)),
+        contentColor = tint,
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Black,
+            maxLines = 1,
+        )
     }
 }

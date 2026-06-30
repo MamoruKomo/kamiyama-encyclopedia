@@ -2,19 +2,13 @@ package com.mamorukomo.kamiyama.thinklet
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.ActivityNotFoundException
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.location.Location
-import android.location.LocationListener
 import android.location.LocationManager
 import android.net.Uri
-import android.os.Bundle
 import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
@@ -23,8 +17,6 @@ import android.widget.Toast
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.Preview
-import androidx.camera.core.SurfaceRequest
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -34,10 +26,10 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.label.ImageLabel
 import com.google.mlkit.vision.label.ImageLabeling
 import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -97,15 +89,9 @@ data class ThinkletObservationState(
 )
 
 class ThinkletObservationViewModel : ViewModel() {
-    private val _surfaceRequest = MutableStateFlow<SurfaceRequest?>(null)
-    val surfaceRequest: StateFlow<SurfaceRequest?> = _surfaceRequest.asStateFlow()
-
     private val _state = MutableStateFlow(ThinkletObservationState())
     val state: StateFlow<ThinkletObservationState> = _state.asStateFlow()
 
-    private val preview = Preview.Builder().build().apply {
-        setSurfaceProvider { request -> _surfaceRequest.value = request }
-    }
     private val imageCapture = ImageCapture.Builder()
         .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
         .build()
@@ -141,12 +127,11 @@ class ThinkletObservationViewModel : ViewModel() {
                 provider.bindToLifecycle(
                     lifecycleOwner,
                     CameraSelector.DEFAULT_BACK_CAMERA,
-                    preview,
                     imageCapture
                 )
                 isBound = true
                 _state.value = _state.value.copy(
-                    status = "準備完了。サイドボタンで観察を撮影できます。",
+                    status = "採集カメラ準備完了。サイドボタンで撮影して同期します。",
                     isCameraReady = true
                 )
             } catch (error: Throwable) {
@@ -155,13 +140,13 @@ class ThinkletObservationViewModel : ViewModel() {
         }
     }
 
-    fun captureObservation(context: Context, sendAfterCapture: Boolean = false) {
+    fun captureObservation(context: Context, sendAfterCapture: Boolean = true) {
         if (_state.value.isCapturing) {
             return
         }
         viewModelScope.launch {
             _state.value = _state.value.copy(
-                status = if (sendAfterCapture) "撮影してAI同期へ送ります..." else "撮影しています...",
+                status = if (sendAfterCapture) "撮影して同期APIへ送ります..." else "撮影しています...",
                 isCapturing = true,
             )
             try {
@@ -192,7 +177,7 @@ class ThinkletObservationViewModel : ViewModel() {
         }
         val endpoint = BuildConfig.SYNC_API_URL.trim().trimEnd('/')
         if (endpoint.isBlank()) {
-            _state.value = _state.value.copy(status = "同期API URLが未設定です。Webで確認を使ってください。")
+            _state.value = _state.value.copy(status = "同期API URLが未設定です。スマホ側で見るにはAPI設定が必要です。")
             Toast.makeText(context, "同期API URLが未設定です", Toast.LENGTH_SHORT).show()
             return
         }
@@ -223,39 +208,6 @@ class ThinkletObservationViewModel : ViewModel() {
                     )
                     Toast.makeText(context, "同期送信に失敗しました", Toast.LENGTH_SHORT).show()
                 }
-        }
-    }
-
-    fun openWebApp(context: Context): Boolean {
-        val payload = _state.value.latestPayload
-        if (payload == null) {
-            Toast.makeText(context, "先に観察を撮影してください", Toast.LENGTH_SHORT).show()
-            return false
-        }
-        val url = Uri.parse(WEB_APP_URL).buildUpon()
-            .appendQueryParameter("thinklet", payload.toEncodedJson())
-            .build()
-            .toString()
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-            addCategory(Intent.CATEGORY_BROWSABLE)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        Log.d(TAG, "openWebApp url=$url")
-        return try {
-            context.startActivity(intent)
-            _state.value = _state.value.copy(status = "Web図鑑を開きました。取り込み表示を確認してください。")
-            Toast.makeText(context, "Web図鑑へ観察を送ります", Toast.LENGTH_SHORT).show()
-            true
-        } catch (_: ActivityNotFoundException) {
-            copyUrlToClipboard(context, url)
-            _state.value = _state.value.copy(status = "Webを開けないため、連携URLをコピーしました。")
-            Toast.makeText(context, "連携URLをコピーしました", Toast.LENGTH_SHORT).show()
-            false
-        } catch (error: Throwable) {
-            copyUrlToClipboard(context, url)
-            _state.value = _state.value.copy(status = "Web連携に失敗。URLをコピーしました: ${error.message}")
-            Toast.makeText(context, "連携URLをコピーしました", Toast.LENGTH_SHORT).show()
-            false
         }
     }
 
@@ -416,7 +368,6 @@ class ThinkletObservationViewModel : ViewModel() {
     private companion object {
         const val TAG = "KamiyamaThinklet"
         const val BUTTON_COOLDOWN_MS = 1500L
-        const val WEB_APP_URL = "https://mamorukomo.github.io/kamiyama-encyclopedia/"
     }
 }
 
@@ -469,16 +420,4 @@ private fun parseServerObservationResult(raw: String): ServerObservationResult {
         else -> null
     }
     return ServerObservationResult(label, category, confidence)
-}
-
-private fun ThinkletObservationPayload.toEncodedJson(): String {
-    return Base64.encodeToString(
-        toJson(includePhoto = false).toString().toByteArray(Charsets.UTF_8),
-        Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
-    )
-}
-
-private fun copyUrlToClipboard(context: Context, url: String) {
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText("kamiyama-thinklet-url", url))
 }
