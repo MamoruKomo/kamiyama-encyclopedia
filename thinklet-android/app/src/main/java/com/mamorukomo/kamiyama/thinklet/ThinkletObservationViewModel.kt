@@ -363,12 +363,17 @@ class ThinkletObservationViewModel : ViewModel() {
             Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
         if (!hasFine && !hasCoarse) {
+            Log.w(TAG, "location_permission_missing fine=$hasFine coarse=$hasCoarse")
             return null
         }
 
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        val fresh = requestFreshLocation(context, manager, hasFine)
         val lastKnown = readLastKnownLocation(manager, hasFine)
+        Log.i(
+            TAG,
+            "location_provider_status fine=$hasFine coarse=$hasCoarse all=${manager.allProviders} enabled=${enabledProviders(manager)} lastKnown=${lastKnown.toDebugString()}"
+        )
+        val fresh = requestFreshLocation(context, manager, hasFine)
         return listOfNotNull(fresh, lastKnown)
             .maxByOrNull { location -> location.time }
     }
@@ -380,18 +385,25 @@ class ThinkletObservationViewModel : ViewModel() {
         hasFine: Boolean,
     ): Location? {
         val providers = preferredProviders(manager, hasFine)
+        if (providers.isEmpty()) {
+            Log.w(TAG, "location_no_enabled_provider")
+            return null
+        }
         for (provider in providers) {
             val timeoutMs = if (provider == LocationManager.GPS_PROVIDER) {
                 GPS_LOCATION_TIMEOUT_MS
             } else {
                 NETWORK_LOCATION_TIMEOUT_MS
             }
+            Log.i(TAG, "location_request_start provider=$provider timeoutMs=$timeoutMs")
             val location = withTimeoutOrNull(timeoutMs) {
                 requestSingleProviderLocation(context, manager, provider)
             }
             if (location != null) {
+                Log.i(TAG, "location_request_success provider=$provider ${location.toDebugString()}")
                 return location
             }
+            Log.w(TAG, "location_request_timeout_or_null provider=$provider")
         }
         return null
     }
@@ -438,6 +450,20 @@ class ThinkletObservationViewModel : ViewModel() {
         return candidates.filter { provider ->
             runCatching { manager.isProviderEnabled(provider) }.getOrDefault(false)
         }
+    }
+
+    private fun enabledProviders(manager: LocationManager): List<String> {
+        return manager.allProviders.filter { provider ->
+            runCatching { manager.isProviderEnabled(provider) }.getOrDefault(false)
+        }
+    }
+
+    private fun Location?.toDebugString(): String {
+        if (this == null) {
+            return "null"
+        }
+        val ageMs = System.currentTimeMillis() - time
+        return "provider=$provider lat=$latitude lon=$longitude accuracy=${takeIf { it.hasAccuracy() }?.accuracy} ageMs=$ageMs"
     }
 
     private fun inferCategory(label: String?): String {
@@ -515,8 +541,8 @@ class ThinkletObservationViewModel : ViewModel() {
     private companion object {
         const val TAG = "KamiyamaThinklet"
         const val BUTTON_COOLDOWN_MS = 1500L
-        const val GPS_LOCATION_TIMEOUT_MS = 2500L
-        const val NETWORK_LOCATION_TIMEOUT_MS = 1500L
+        const val GPS_LOCATION_TIMEOUT_MS = 20000L
+        const val NETWORK_LOCATION_TIMEOUT_MS = 8000L
         const val TONE_VOLUME = 85
         const val TONE_SHORT_MS = 120
         const val TONE_LONG_MS = 260
