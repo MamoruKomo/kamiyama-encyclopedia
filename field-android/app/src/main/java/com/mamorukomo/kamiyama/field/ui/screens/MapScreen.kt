@@ -33,9 +33,7 @@ import com.mamorukomo.kamiyama.field.data.NatureZones
 import com.mamorukomo.kamiyama.field.data.Observation
 import com.mamorukomo.kamiyama.field.data.SpeciesCategory
 import com.mamorukomo.kamiyama.field.data.SpeciesCandidates
-import com.mamorukomo.kamiyama.field.data.distanceMeters
 import com.mamorukomo.kamiyama.field.ui.AdventureCard
-import com.mamorukomo.kamiyama.field.ui.EmptyState
 import com.mamorukomo.kamiyama.field.ui.FieldCoral
 import com.mamorukomo.kamiyama.field.ui.FieldGreen
 import com.mamorukomo.kamiyama.field.ui.FieldLeaf
@@ -43,7 +41,6 @@ import com.mamorukomo.kamiyama.field.ui.FieldPanelAlt
 import com.mamorukomo.kamiyama.field.ui.FieldSky
 import com.mamorukomo.kamiyama.field.ui.FieldTextMuted
 import com.mamorukomo.kamiyama.field.ui.FieldYellow
-import com.mamorukomo.kamiyama.field.ui.MetricTile
 import com.mamorukomo.kamiyama.field.ui.RarityPill
 import com.mamorukomo.kamiyama.field.ui.SectionTitle
 import com.mamorukomo.kamiyama.field.ui.StatusPill
@@ -51,7 +48,6 @@ import com.mamorukomo.kamiyama.field.ui.accentColor
 import com.mamorukomo.kamiyama.field.ui.format5
 import com.mamorukomo.kamiyama.field.ui.formatDate
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
@@ -65,31 +61,23 @@ internal fun MapScreen(
     selectedObservation: Observation?,
     onObservationSelected: (Observation) -> Unit,
 ) {
-    val nearestZone = NatureZones.minByOrNull { zone ->
-        distanceMeters(currentPoint, zone.polygon.center())
-    }
-    val nearCandidates = SpeciesCandidates
-        .flatMap { candidate -> candidate.knownLocations.map { candidate to it } }
-        .sortedBy { (_, location) -> distanceMeters(currentPoint, location) }
-        .take(3)
-
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(FieldPanelAlt)
             .padding(padding),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            AdventureCard(tint = FieldLeaf) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SectionTitle("たんけんマップ", "発見ピン、候補スポット、自然エリアを重ねて見ます。")
+            AdventureCard(tint = FieldLeaf, filled = false) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MetricTile("発見", observations.size.toString(), Modifier.weight(1f), FieldGreen)
-                        MetricTile("候補", SpeciesCandidates.sumOf { it.knownLocations.size }.toString(), Modifier.weight(1f), FieldYellow)
-                        MetricTile("エリア", NatureZones.size.toString(), Modifier.weight(1f), FieldSky)
+                        StatusPill("MAP", FieldLeaf)
+                        StatusPill("発見 ${observations.size}", FieldGreen)
+                        StatusPill("候補 ${SpeciesCandidates.sumOf { it.knownLocations.size }}", FieldYellow)
                     }
+                    SectionTitle("たんけんマップ")
                 }
             }
         }
@@ -100,46 +88,6 @@ internal fun MapScreen(
                 onObservationSelected = onObservationSelected,
             )
         }
-        item {
-            MapLegend()
-        }
-        nearestZone?.let { zone ->
-            item {
-                AdventureCard(tint = zone.kind.tint(), filled = false) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SectionTitle("いま近いエリア", zone.name)
-                        Text(zone.description, color = FieldTextMuted)
-                        Text(
-                            currentPoint.shortLabel(),
-                            color = FieldTextMuted,
-                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            }
-        }
-        if (nearCandidates.isNotEmpty()) {
-            item {
-                AdventureCard(tint = FieldYellow, filled = false) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SectionTitle("近くの候補スポット", "見つかるかもしれない生き物の目安です。")
-                        nearCandidates.forEach { (candidate, location) ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                StatusPill(candidate.category.label, candidate.category.accentColor())
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(candidate.commonName, color = Color(0xFF111816), fontWeight = FontWeight.ExtraBold)
-                                    Text(
-                                        "${distanceMeters(currentPoint, location).toInt()}m / ${candidate.rarity.label}",
-                                        color = FieldTextMuted,
-                                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
         selectedObservation?.let { observation ->
             item {
                 SelectedObservationCard(observation)
@@ -147,11 +95,12 @@ internal fun MapScreen(
         }
         if (observations.isEmpty()) {
             item {
-                EmptyState(
-                    title = "まだピンがありません",
-                    body = "THINKLETで撮ってから、うけとる画面で発見を取り込みます。",
-                    tint = FieldCoral,
-                )
+                AdventureCard(tint = FieldCoral, filled = false) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StatusPill("NEXT", FieldCoral)
+                        Text("THINKLETで撮ると、ここに発見ピンが立ちます。", color = FieldTextMuted)
+                    }
+                }
             }
         }
     }
@@ -166,13 +115,13 @@ private fun FieldMap(
     AndroidView(
         modifier = Modifier
             .fillMaxWidth()
-            .height(390.dp)
+            .height(560.dp)
             .clip(RoundedCornerShape(8.dp)),
         factory = { context ->
             MapView(context).apply {
                 setTileSource(TileSourceFactory.MAPNIK)
                 setMultiTouchControls(true)
-                controller.setZoom(13.5)
+                controller.setZoom(13.2)
                 controller.setCenter(GeoPoint(KamiyamaCenter.latitude, KamiyamaCenter.longitude))
             }
         },
@@ -183,9 +132,9 @@ private fun FieldMap(
                 map.overlays.add(
                     Polygon(map).apply {
                         points = zone.polygon.map { GeoPoint(it.latitude, it.longitude) }
-                        fillPaint.color = zone.kind.argb(alpha = 44)
-                        outlinePaint.color = zone.kind.argb(alpha = 160)
-                        outlinePaint.strokeWidth = 3f
+                        fillPaint.color = zone.kind.argb(alpha = 24)
+                        outlinePaint.color = zone.kind.argb(alpha = 110)
+                        outlinePaint.strokeWidth = 2f
                         title = zone.name
                         snippet = zone.description
                     },
@@ -238,31 +187,14 @@ private fun FieldMap(
                     snippet = currentPoint.shortLabel()
                 },
             )
-            map.zoomToBoundingBox(buildMapBounds(observations, currentPoint), false, 48)
+            val focus = observations.lastOrNull()
+                ?.let { GeoPoint(it.latitude, it.longitude) }
+                ?: GeoPoint(currentPoint.latitude, currentPoint.longitude)
+            map.controller.setZoom(if (observations.isEmpty()) 13.1 else 13.8)
+            map.controller.setCenter(focus)
             map.invalidate()
         },
     )
-}
-
-@Composable
-private fun MapLegend() {
-    AdventureCard(tint = FieldSky, filled = false) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            SectionTitle("マップの見方", "色とマークで探検の状態を分けました。")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                StatusPill("発", FieldGreen)
-                Text("自分たちがTHINKLETで見つけた場所", color = FieldTextMuted, modifier = Modifier.weight(1f))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                StatusPill("葉/虫", FieldYellow)
-                Text("GBIFなどから用意した候補スポット", color = FieldTextMuted, modifier = Modifier.weight(1f))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                StatusPill("面", FieldSky)
-                Text("川、里山、森、尾根、草地の自然エリア", color = FieldTextMuted, modifier = Modifier.weight(1f))
-            }
-        }
-    }
 }
 
 @Composable
@@ -286,27 +218,6 @@ private fun SelectedObservationCard(observation: Observation) {
 }
 
 private fun LatLng.shortLabel(): String = "${latitude.format5()}, ${longitude.format5()}"
-
-private fun List<LatLng>.center(): LatLng {
-    return LatLng(
-        latitude = sumOf { it.latitude } / size,
-        longitude = sumOf { it.longitude } / size,
-    )
-}
-
-private fun buildMapBounds(observations: List<Observation>, currentPoint: LatLng): BoundingBox {
-    val points = buildList {
-        add(GeoPoint(currentPoint.latitude, currentPoint.longitude))
-        add(GeoPoint(KamiyamaCenter.latitude, KamiyamaCenter.longitude))
-        observations.forEach { add(GeoPoint(it.latitude, it.longitude)) }
-        SpeciesCandidates.flatMap { it.knownLocations }.forEach { add(GeoPoint(it.latitude, it.longitude)) }
-    }
-    val north = points.maxOf { it.latitude } + 0.008
-    val south = points.minOf { it.latitude } - 0.008
-    val east = points.maxOf { it.longitude } + 0.008
-    val west = points.minOf { it.longitude } - 0.008
-    return BoundingBox(north, east, south, west)
-}
 
 private fun android.content.Context.pinIcon(color: Int, label: String): BitmapDrawable {
     val bitmap = Bitmap.createBitmap(72, 92, Bitmap.Config.ARGB_8888)
