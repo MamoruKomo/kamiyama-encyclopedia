@@ -93,6 +93,12 @@ data class ThinkletObservationState(
     val isSending: Boolean = false,
 )
 
+private data class NatureGuess(
+    val label: String,
+    val category: String,
+    val confidence: Float?,
+)
+
 class ThinkletObservationViewModel : ViewModel() {
     private val _state = MutableStateFlow(ThinkletObservationState())
     val state: StateFlow<ThinkletObservationState> = _state.asStateFlow()
@@ -238,15 +244,15 @@ class ThinkletObservationViewModel : ViewModel() {
     private suspend fun captureObservationPayload(context: Context): ThinkletObservationPayload {
         val photoFile = createPhotoFile(context)
         takePicture(photoFile, context)
-        val label = classifyImage(context, photoFile)
+        val guess = classifyNature(context, photoFile)
         _state.value = _state.value.copy(status = "写真OK。位置情報を取得しています...")
         val location = readBestLocation(context)
         val observedAt = System.currentTimeMillis()
         return ThinkletObservationPayload(
             id = "thinklet-$observedAt",
-            category = inferCategory(label?.text),
-            label = label?.text ?: "Thinklet観察",
-            confidence = label?.confidence,
+            category = guess.category,
+            label = guess.label,
+            confidence = guess.confidence,
             latitude = location?.latitude,
             longitude = location?.longitude,
             accuracyMeters = location?.takeIf { it.hasAccuracy() }?.accuracy,
@@ -294,6 +300,24 @@ class ThinkletObservationViewModel : ViewModel() {
             labeler.process(image)
                 .addOnSuccessListener { labels -> continuation.resume(labels.maxByOrNull { it.confidence }) }
                 .addOnFailureListener { error -> continuation.resumeWithException(error) }
+        }
+    }
+
+    private suspend fun classifyNature(context: Context, file: File): NatureGuess {
+        val label = classifyImage(context, file)
+        val category = inferCategory(label?.text)
+        return if (category == "unknown") {
+            NatureGuess(
+                label = "未同定",
+                category = "unknown",
+                confidence = label?.confidence,
+            )
+        } else {
+            NatureGuess(
+                label = label?.text ?: "未同定",
+                category = category,
+                confidence = label?.confidence,
+            )
         }
     }
 
@@ -392,7 +416,7 @@ class ThinkletObservationViewModel : ViewModel() {
         return when {
             insectWords.any { word -> text.contains(word) } -> "insect"
             plantWords.any { word -> text.contains(word) } -> "plant"
-            else -> "plant"
+            else -> "unknown"
         }
     }
 
@@ -485,8 +509,8 @@ private fun parseServerObservationResult(raw: String): ServerObservationResult {
     val analysis = observation?.optJSONObject("aiAnalysis")
     val label = analysis?.optString("commonName")?.takeIf { it.isNotBlank() }
         ?: observation?.optString("label")?.takeIf { it.isNotBlank() }
-    val category = analysis?.optString("category")?.takeIf { it == "plant" || it == "insect" }
-        ?: observation?.optString("category")?.takeIf { it == "plant" || it == "insect" }
+    val category = analysis?.optString("category")?.takeIf { it == "plant" || it == "insect" || it == "unknown" }
+        ?: observation?.optString("category")?.takeIf { it == "plant" || it == "insect" || it == "unknown" }
     val confidence = when {
         analysis?.has("confidence") == true -> analysis.optDouble("confidence").toFloat()
         observation?.has("confidence") == true -> observation.optDouble("confidence").toFloat()

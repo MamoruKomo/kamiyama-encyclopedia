@@ -299,8 +299,11 @@ function normalizeObservedAt(value: unknown): number {
   return Date.now();
 }
 
-function normalizeCategory(value: unknown): 'plant' | 'insect' {
-  return value === 'insect' ? 'insect' : 'plant';
+function normalizeCategory(value: unknown): 'plant' | 'insect' | 'unknown' {
+  if (value === 'insect' || value === 'plant') {
+    return value;
+  }
+  return 'unknown';
 }
 
 function buildPhotoDataUrl(payload: ThinkletObservationPayload): string | null {
