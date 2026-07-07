@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
@@ -40,6 +41,8 @@ internal val FieldGreen = Color(0xFF2F9F68)
 internal val FieldYellow = Color(0xFFE6AC35)
 internal val FieldCoral = Color(0xFFE66A57)
 internal val FieldSky = Color(0xFF3F88B8)
+internal val FieldLeaf = Color(0xFF7CB342)
+internal val FieldBerry = Color(0xFFC84A68)
 internal val FieldInk = Color(0xFF111816)
 internal val FieldPanel = Color(0xFFFFFFFF)
 internal val FieldPanelAlt = Color(0xFFF7FAF5)
@@ -68,15 +71,16 @@ internal fun AppCard(
 }
 
 @Composable
-internal fun MissionCard(
+internal fun AdventureCard(
     modifier: Modifier = Modifier,
     tint: Color = FieldGreen,
+    filled: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     Surface(
         modifier = modifier,
         shape = cardShape,
-        color = tint.copy(alpha = 0.10f),
+        color = if (filled) tint.copy(alpha = 0.10f) else FieldPanel,
         border = androidx.compose.foundation.BorderStroke(1.dp, tint.copy(alpha = 0.25f)),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -88,13 +92,22 @@ internal fun MissionCard(
 }
 
 @Composable
+internal fun MissionCard(
+    modifier: Modifier = Modifier,
+    tint: Color = FieldGreen,
+    content: @Composable () -> Unit,
+) {
+    AdventureCard(modifier = modifier, tint = tint, content = content)
+}
+
+@Composable
 internal fun SectionTitle(
     title: String,
     subtitle: String? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, color = FieldInk, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(title, color = FieldInk, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
         if (subtitle != null) {
             Text(subtitle, color = FieldTextMuted, style = MaterialTheme.typography.bodySmall)
         }
@@ -108,10 +121,19 @@ internal fun MetricTile(
     modifier: Modifier = Modifier,
     tint: Color = FieldGreen,
 ) {
-    AppCard(modifier = modifier, contentPadding = PaddingValues(12.dp)) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = tint.copy(alpha = 0.10f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, tint.copy(alpha = 0.22f)),
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(value, color = tint, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(label, color = FieldTextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+            Box(modifier = Modifier.padding(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(value, color = tint, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                    Text(label, color = FieldTextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                }
+            }
         }
     }
 }
@@ -137,7 +159,7 @@ internal fun FieldButton(
         ),
         contentPadding = PaddingValues(horizontal = 16.dp),
     ) {
-        Text(text, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(text, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -157,9 +179,53 @@ internal fun StatusPill(
             text = text,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.ExtraBold,
             maxLines = 1,
         )
+    }
+}
+
+@Composable
+internal fun QuestStep(
+    number: String,
+    title: String,
+    detail: String,
+    tint: Color,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = FieldPanel,
+        border = androidx.compose.foundation.BorderStroke(1.dp, tint.copy(alpha = 0.24f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            StatusPill(number, tint)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, color = FieldInk, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                Text(detail, color = FieldTextMuted, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun EmptyState(
+    title: String,
+    body: String,
+    tint: Color = FieldGreen,
+    modifier: Modifier = Modifier,
+) {
+    AdventureCard(modifier = modifier, tint = tint, filled = false) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            StatusPill("NEXT", tint)
+            Text(title, color = FieldInk, fontWeight = FontWeight.ExtraBold)
+            Text(body, color = FieldTextMuted, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
@@ -193,7 +259,7 @@ internal fun CategorySelectorButton(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             StatusPill(category.chip, category.accentColor())
-            Text(category.label, color = FieldInk, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(category.label, color = FieldInk, fontWeight = FontWeight.ExtraBold, maxLines = 1)
         }
     }
 }
@@ -228,7 +294,7 @@ internal fun ObservationImage(uri: String, modifier: Modifier = Modifier) {
             )
         } else {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("NO IMAGE", color = FieldTextMuted, fontWeight = FontWeight.Bold)
+                Text("NO IMAGE", color = FieldTextMuted, fontWeight = FontWeight.ExtraBold)
                 Text("写真なし", color = FieldTextMuted, style = MaterialTheme.typography.labelSmall)
             }
         }

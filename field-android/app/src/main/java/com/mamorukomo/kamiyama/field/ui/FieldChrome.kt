@@ -2,6 +2,7 @@ package com.mamorukomo.kamiyama.field.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,20 +28,23 @@ internal fun FieldHeader(
     activeTab: AppTab,
     message: String,
 ) {
-    Surface(color = FieldPanel, shadowElevation = 0.dp) {
+    Surface(color = FieldPanel, shadowElevation = 2.dp) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(FieldPanel)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(modifier = Modifier.weight(1f)) {
+                    StatusPill("KAMIYAMA QUEST", FieldSky)
                     Text(
                         "神山いきものずかん",
                         color = FieldInk,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(top = 4.dp),
                     )
                     Text(
                         activeTab.title,
@@ -50,15 +54,40 @@ internal fun FieldHeader(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                StatusPill("発見 ${observations.size}", FieldGreen)
+                DiscoveryCounter(observations.size)
             }
-            Text(
-                text = "ミッション: $message",
-                color = FieldTextMuted,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = FieldGreen.copy(alpha = 0.08f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, FieldGreen.copy(alpha = 0.18f)),
+            ) {
+                Text(
+                    text = "ミッション: $message",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    color = FieldTextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiscoveryCounter(count: Int) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = FieldYellow.copy(alpha = 0.16f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FieldYellow.copy(alpha = 0.30f)),
+        contentColor = FieldInk,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(count.toString(), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
+            Text("発見", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -98,23 +127,25 @@ private fun FieldTabButton(
 ) {
     Surface(
         onClick = onClick,
-        modifier = modifier.height(48.dp),
+        modifier = modifier.height(54.dp),
         shape = RoundedCornerShape(8.dp),
-        color = if (selected) FieldGreen else Color(0xFFF0F4F1),
+        color = if (selected) FieldGreen else Color(0xFFF1F6F2),
         contentColor = if (selected) Color.White else FieldInk,
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 8.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                tab.token,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-            )
-            Text(tab.label, fontWeight = FontWeight.Bold, maxLines = 1)
+        Box(contentAlignment = Alignment.Center) {
+            Column(
+                modifier = Modifier.padding(horizontal = 8.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    tab.token,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+                Text(tab.label, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            }
         }
     }
 }

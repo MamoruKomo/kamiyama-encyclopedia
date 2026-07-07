@@ -24,10 +24,13 @@ import com.mamorukomo.kamiyama.field.data.Rarity
 import com.mamorukomo.kamiyama.field.data.SpeciesCandidate
 import com.mamorukomo.kamiyama.field.data.SpeciesCategory
 import com.mamorukomo.kamiyama.field.data.SpeciesCandidates
-import com.mamorukomo.kamiyama.field.ui.AppCard
+import com.mamorukomo.kamiyama.field.ui.AdventureCard
+import com.mamorukomo.kamiyama.field.ui.EmptyState
 import com.mamorukomo.kamiyama.field.ui.FieldButton
+import com.mamorukomo.kamiyama.field.ui.FieldBerry
 import com.mamorukomo.kamiyama.field.ui.FieldCoral
 import com.mamorukomo.kamiyama.field.ui.FieldGreen
+import com.mamorukomo.kamiyama.field.ui.FieldLeaf
 import com.mamorukomo.kamiyama.field.ui.FieldPanelAlt
 import com.mamorukomo.kamiyama.field.ui.FieldTextMuted
 import com.mamorukomo.kamiyama.field.ui.FieldYellow
@@ -61,11 +64,11 @@ internal fun DexScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            AppCard {
+            AdventureCard(tint = FieldGreen) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SectionTitle("発見ずかん", "THINKLETから届いた生き物を集めます。")
+                    SectionTitle("発見ずかん", "THINKLETから届いた生き物コレクションです。")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MetricTile("観察", observations.size.toString(), Modifier.weight(1f), FieldGreen)
+                        MetricTile("発見", observations.size.toString(), Modifier.weight(1f), FieldGreen)
                         MetricTile("なまえ", "${discoveredIds.size}/${SpeciesCandidates.size}", Modifier.weight(1f), FieldYellow)
                         MetricTile("レア", rare.toString(), Modifier.weight(1f), FieldCoral)
                     }
@@ -79,13 +82,18 @@ internal fun DexScreen(
             }
         }
         item {
+            CollectionFocus(observations)
+        }
+        item {
             InsectRarityCatalog(discoveredIds)
         }
         if (observations.isEmpty()) {
             item {
-                AppCard {
-                    SectionTitle("まだ発見がありません", "THINKLETで写真を撮ってから、うけとるボタンを押してください。")
-                }
+                EmptyState(
+                    title = "まだ発見がありません",
+                    body = "THINKLETで写真を撮ってから、うけとるボタンを押してください。",
+                    tint = FieldCoral,
+                )
             }
         }
         items(observations, key = { it.id }) { observation ->
@@ -95,12 +103,23 @@ internal fun DexScreen(
 }
 
 @Composable
+private fun CollectionFocus(observations: List<Observation>) {
+    val plants = observations.count { it.category == SpeciesCategory.Plant }
+    val insects = observations.count { it.category == SpeciesCategory.Insect }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        MetricTile("植物", plants.toString(), Modifier.weight(1f), FieldLeaf)
+        MetricTile("昆虫", insects.toString(), Modifier.weight(1f), FieldYellow)
+        MetricTile("音つき", "THINKLET", Modifier.weight(1f), FieldBerry)
+    }
+}
+
+@Composable
 private fun InsectRarityCatalog(discoveredIds: Set<String>) {
     val insects = SpeciesCandidates
         .filter { it.category == SpeciesCategory.Insect }
         .sortedWith(compareByDescending<SpeciesCandidate> { it.rarity.score }.thenBy { it.commonName })
 
-    AppCard {
+    AdventureCard(tint = FieldYellow, filled = false) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle(
                 title = "昆虫レア図鑑",
@@ -118,7 +137,7 @@ private fun InsectRow(insect: SpeciesCandidate, discovered: Boolean) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         StatusPill(if (discovered) "発見" else "未発見", if (discovered) FieldGreen else FieldTextMuted)
         Column(modifier = Modifier.weight(1f)) {
-            Text(insect.commonName, color = Color(0xFF111816), fontWeight = FontWeight.Bold)
+            Text(insect.commonName, color = Color(0xFF111816), fontWeight = FontWeight.ExtraBold)
             Text(insect.scientificName, color = FieldTextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         RarityPill(insect.rarity)
@@ -135,7 +154,7 @@ private fun ObservationCard(observation: Observation, onDelete: () -> Unit) {
         .take(2)
         .joinToString(" / ")
 
-    AppCard {
+    AdventureCard(tint = observation.category.accentColor(), filled = false) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             ObservationImage(
                 uri = observation.photoUri,
@@ -152,7 +171,7 @@ private fun ObservationCard(observation: Observation, onDelete: () -> Unit) {
                 Text(
                     if (isThinklet && species == null) "AIのよそう: ${observation.customName}" else observation.customName,
                     color = Color(0xFF111816),
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.ExtraBold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )

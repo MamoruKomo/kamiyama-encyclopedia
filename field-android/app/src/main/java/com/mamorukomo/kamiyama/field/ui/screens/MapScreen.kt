@@ -23,8 +23,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.mamorukomo.kamiyama.field.data.KamiyamaCenter
 import com.mamorukomo.kamiyama.field.data.LatLng
 import com.mamorukomo.kamiyama.field.data.Observation
-import com.mamorukomo.kamiyama.field.ui.AppCard
+import com.mamorukomo.kamiyama.field.ui.AdventureCard
+import com.mamorukomo.kamiyama.field.ui.EmptyState
+import com.mamorukomo.kamiyama.field.ui.FieldCoral
 import com.mamorukomo.kamiyama.field.ui.FieldGreen
+import com.mamorukomo.kamiyama.field.ui.FieldLeaf
 import com.mamorukomo.kamiyama.field.ui.FieldPanelAlt
 import com.mamorukomo.kamiyama.field.ui.FieldSky
 import com.mamorukomo.kamiyama.field.ui.FieldTextMuted
@@ -57,12 +60,12 @@ internal fun MapScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            AppCard {
+            AdventureCard(tint = FieldLeaf) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SectionTitle("たんけんマップ", "THINKLETで撮った場所がピンになります。")
+                    SectionTitle("たんけんマップ", "THINKLETで撮った場所が、発見ピンになります。")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         MetricTile("発見", observations.size.toString(), Modifier.weight(1f), FieldGreen)
-                        MetricTile("現在地", "${currentPoint.latitude.format5()}, ${currentPoint.longitude.format5()}", Modifier.weight(1f), FieldSky)
+                        MetricTile("いま", currentPoint.shortLabel(), Modifier.weight(1f), FieldSky)
                     }
                 }
             }
@@ -79,6 +82,15 @@ internal fun MapScreen(
                 SelectedObservationCard(observation)
             }
         }
+        if (observations.isEmpty()) {
+            item {
+                EmptyState(
+                    title = "まだピンがありません",
+                    body = "THINKLETで撮ってから、うけとる画面で発見を取り込みます。",
+                    tint = FieldCoral,
+                )
+            }
+        }
     }
 }
 
@@ -91,7 +103,7 @@ private fun FieldMap(
     AndroidView(
         modifier = Modifier
             .fillMaxWidth()
-            .height(420.dp)
+            .height(390.dp)
             .clip(RoundedCornerShape(8.dp)),
         factory = { context ->
             MapView(context).apply {
@@ -134,13 +146,13 @@ private fun FieldMap(
 
 @Composable
 private fun SelectedObservationCard(observation: Observation) {
-    AppCard {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    AdventureCard(tint = observation.category.accentColor(), filled = false) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatusPill(observation.category.label, observation.category.accentColor())
                 RarityPill(observation.rarity)
             }
-            Text(observation.customName, color = Color(0xFF111816), fontWeight = FontWeight.Bold)
+            Text(observation.customName, color = Color(0xFF111816), fontWeight = FontWeight.ExtraBold)
             Text(formatDate(observation.observedAtMillis), color = FieldTextMuted)
             Text(
                 "${observation.environment} / ${observation.latitude.format5()}, ${observation.longitude.format5()}",
@@ -151,3 +163,5 @@ private fun SelectedObservationCard(observation: Observation) {
         }
     }
 }
+
+private fun LatLng.shortLabel(): String = "${latitude.format5()}, ${longitude.format5()}"
