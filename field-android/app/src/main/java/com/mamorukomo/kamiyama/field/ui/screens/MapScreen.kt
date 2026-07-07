@@ -28,8 +28,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.graphics.toColorInt
 import com.mamorukomo.kamiyama.field.data.KamiyamaCenter
 import com.mamorukomo.kamiyama.field.data.LatLng
-import com.mamorukomo.kamiyama.field.data.NatureKind
-import com.mamorukomo.kamiyama.field.data.NatureZones
 import com.mamorukomo.kamiyama.field.data.Observation
 import com.mamorukomo.kamiyama.field.data.SpeciesCategory
 import com.mamorukomo.kamiyama.field.data.SpeciesCandidates
@@ -51,7 +49,6 @@ import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.Polygon
 
 @Composable
 internal fun MapScreen(
@@ -75,9 +72,9 @@ internal fun MapScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatusPill("MAP", FieldLeaf)
                         StatusPill("発見 ${observations.size}", FieldGreen)
-                        StatusPill("候補 ${SpeciesCandidates.sumOf { it.knownLocations.size }}", FieldYellow)
+                        StatusPill("GBIF ${SpeciesCandidates.sumOf { it.knownLocations.size }}", FieldSky)
                     }
-                    SectionTitle("たんけんマップ")
+                    SectionTitle("根拠マップ")
                 }
             }
         }
@@ -128,19 +125,6 @@ private fun FieldMap(
         update = { map ->
             map.overlays.clear()
 
-            NatureZones.forEach { zone ->
-                map.overlays.add(
-                    Polygon(map).apply {
-                        points = zone.polygon.map { GeoPoint(it.latitude, it.longitude) }
-                        fillPaint.color = zone.kind.argb(alpha = 24)
-                        outlinePaint.color = zone.kind.argb(alpha = 110)
-                        outlinePaint.strokeWidth = 2f
-                        title = zone.name
-                        snippet = zone.description
-                    },
-                )
-            }
-
             SpeciesCandidates.forEach { candidate ->
                 candidate.knownLocations.forEach { location ->
                     map.overlays.add(
@@ -152,7 +136,7 @@ private fun FieldMap(
                                 label = if (candidate.category == SpeciesCategory.Plant) "葉" else "虫",
                             )
                             title = candidate.commonName
-                            snippet = "候補スポット / ${candidate.rarity.label} / ${candidate.hint}"
+                            snippet = "GBIF記録 / ${candidate.rarity.label} / ${candidate.sourceUrl}"
                         },
                     )
                 }
@@ -246,25 +230,5 @@ private fun Color.toArgbInt(): Int {
         (red * 255).toInt(),
         (green * 255).toInt(),
         (blue * 255).toInt(),
-    )
-}
-
-private fun NatureKind.tint(): Color {
-    return when (this) {
-        NatureKind.River -> FieldSky
-        NatureKind.Forest -> FieldGreen
-        NatureKind.Village -> FieldCoral
-        NatureKind.Ridge -> FieldLeaf
-        NatureKind.Field -> FieldYellow
-    }
-}
-
-private fun NatureKind.argb(alpha: Int): Int {
-    val color = tint()
-    return android.graphics.Color.argb(
-        alpha,
-        (color.red * 255).toInt(),
-        (color.green * 255).toInt(),
-        (color.blue * 255).toInt(),
     )
 }

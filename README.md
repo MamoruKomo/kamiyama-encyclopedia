@@ -160,4 +160,4 @@ cd field-android
 
 ## データ
 
-候補生物データはGBIF occurrence APIで神山町周辺の軽い範囲を確認し、MVP用に軽量化して `src/data/kamiyama.ts` に同梱しています。自然レイヤーは、観察体験を作るための神山町周辺の概略ポリゴンです。
+候補生物データはGBIF occurrence APIで神山町周辺の軽い範囲を確認し、MVP用に軽量化して `src/data/kamiyama.ts` と Android 側の `KamiyamaData.kt` に同梱しています。地図では、根拠の弱い植生ポリゴンは表示せず、GBIF記録に紐づく候補点と、THINKLETから届いた実際の発見ピンだけを表示します。植生図そのものを表示する場合は、環境省などの公開GISデータを別フェーズで取り込みます。
