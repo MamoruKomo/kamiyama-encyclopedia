@@ -14,7 +14,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mamorukomo.kamiyama.field.data.Observation
 import com.mamorukomo.kamiyama.field.data.Rarity
@@ -22,14 +21,11 @@ import com.mamorukomo.kamiyama.field.ui.AdventureCard
 import com.mamorukomo.kamiyama.field.ui.FieldButton
 import com.mamorukomo.kamiyama.field.ui.FieldCoral
 import com.mamorukomo.kamiyama.field.ui.FieldGreen
-import com.mamorukomo.kamiyama.field.ui.FieldLeaf
 import com.mamorukomo.kamiyama.field.ui.FieldPanelAlt
 import com.mamorukomo.kamiyama.field.ui.FieldSky
 import com.mamorukomo.kamiyama.field.ui.FieldTextMuted
 import com.mamorukomo.kamiyama.field.ui.FieldYellow
 import com.mamorukomo.kamiyama.field.ui.MetricTile
-import com.mamorukomo.kamiyama.field.ui.QuestStep
-import com.mamorukomo.kamiyama.field.ui.SectionTitle
 import com.mamorukomo.kamiyama.field.ui.StatusPill
 
 @Composable
@@ -52,25 +48,19 @@ internal fun SyncScreen(
     ) {
         item {
             AdventureCard(tint = FieldSky) {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatusPill("THINKLET", FieldSky)
-                        StatusPill("AIのよそう", FieldYellow)
-                        StatusPill("ずかん", FieldGreen)
+                        StatusPill("AI", FieldYellow)
                     }
                     Text(
-                        "発見をうけとろう",
+                        "発見をキャッチ",
                         color = Color(0xFF111816),
                         fontWeight = FontWeight.ExtraBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        "THINKLETで撮った写真を、AIのよそうつきでマップとずかんに入れます。",
-                        color = FieldTextMuted,
+                        style = androidx.compose.material3.MaterialTheme.typography.headlineMedium,
                     )
                     FieldButton(
-                        text = if (isSyncing) "さがしています..." else "THINKLETからうけとる",
+                        text = if (isSyncing) "さがし中..." else "うけとる",
                         enabled = syncEnabled && !isSyncing,
                         tint = FieldCoral,
                         modifier = Modifier.fillMaxWidth(),
@@ -78,7 +68,7 @@ internal fun SyncScreen(
                     )
                     if (!syncEnabled) {
                         Text(
-                            "先生へ: field-android/local.properties に kamiyamaSyncApiUrl を設定してください。",
+                            "同期API未設定",
                             color = FieldCoral,
                             fontWeight = FontWeight.Bold,
                         )
@@ -91,16 +81,6 @@ internal fun SyncScreen(
                 MetricTile("発見", observations.size.toString(), Modifier.weight(1f), FieldGreen)
                 MetricTile("レア", rareCount.toString(), Modifier.weight(1f), FieldYellow)
                 MetricTile("AI", "ON", Modifier.weight(1f), FieldSky)
-            }
-        }
-        item {
-            AdventureCard(tint = FieldLeaf, filled = false) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SectionTitle("たんけんのながれ", "音が鳴ったら、スマホで受け取ります。")
-                    QuestStep("1", "THINKLETで撮る", "写真、時刻、位置をまとめて記録します。", FieldCoral)
-                    QuestStep("2", "AIがよそう", "虫か植物か、名前とレア度を見ます。", FieldYellow)
-                    QuestStep("3", "ずかんに入る", "見つけた場所がマップのピンになります。", FieldGreen)
-                }
             }
         }
     }

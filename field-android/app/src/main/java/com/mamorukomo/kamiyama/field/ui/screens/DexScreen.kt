@@ -21,16 +21,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mamorukomo.kamiyama.field.data.Observation
 import com.mamorukomo.kamiyama.field.data.Rarity
-import com.mamorukomo.kamiyama.field.data.SpeciesCandidate
-import com.mamorukomo.kamiyama.field.data.SpeciesCategory
 import com.mamorukomo.kamiyama.field.data.SpeciesCandidates
 import com.mamorukomo.kamiyama.field.ui.AdventureCard
 import com.mamorukomo.kamiyama.field.ui.EmptyState
 import com.mamorukomo.kamiyama.field.ui.FieldButton
-import com.mamorukomo.kamiyama.field.ui.FieldBerry
 import com.mamorukomo.kamiyama.field.ui.FieldCoral
 import com.mamorukomo.kamiyama.field.ui.FieldGreen
-import com.mamorukomo.kamiyama.field.ui.FieldLeaf
 import com.mamorukomo.kamiyama.field.ui.FieldPanelAlt
 import com.mamorukomo.kamiyama.field.ui.FieldTextMuted
 import com.mamorukomo.kamiyama.field.ui.FieldYellow
@@ -66,14 +62,14 @@ internal fun DexScreen(
         item {
             AdventureCard(tint = FieldGreen) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SectionTitle("発見ずかん", "THINKLETから届いた生き物コレクションです。")
+                    SectionTitle("発見ずかん")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         MetricTile("発見", observations.size.toString(), Modifier.weight(1f), FieldGreen)
-                        MetricTile("なまえ", "${discoveredIds.size}/${SpeciesCandidates.size}", Modifier.weight(1f), FieldYellow)
+                        MetricTile("図鑑", "${discoveredIds.size}/${SpeciesCandidates.size}", Modifier.weight(1f), FieldYellow)
                         MetricTile("レア", rare.toString(), Modifier.weight(1f), FieldCoral)
                     }
                     FieldButton(
-                        text = if (isSyncing) "さがしています..." else "THINKLETからうけとる",
+                        text = if (isSyncing) "さがし中..." else "うけとる",
                         enabled = syncEnabled && !isSyncing,
                         modifier = Modifier.fillMaxWidth(),
                         onClick = onSync,
@@ -81,17 +77,11 @@ internal fun DexScreen(
                 }
             }
         }
-        item {
-            CollectionFocus(observations)
-        }
-        item {
-            InsectRarityCatalog(discoveredIds)
-        }
         if (observations.isEmpty()) {
             item {
                 EmptyState(
                     title = "まだ発見がありません",
-                    body = "THINKLETで写真を撮ってから、うけとるボタンを押してください。",
+                    body = "THINKLETで撮ると写真が並びます。",
                     tint = FieldCoral,
                 )
             }
@@ -103,101 +93,37 @@ internal fun DexScreen(
 }
 
 @Composable
-private fun CollectionFocus(observations: List<Observation>) {
-    val plants = observations.count { it.category == SpeciesCategory.Plant }
-    val insects = observations.count { it.category == SpeciesCategory.Insect }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        MetricTile("植物", plants.toString(), Modifier.weight(1f), FieldLeaf)
-        MetricTile("昆虫", insects.toString(), Modifier.weight(1f), FieldYellow)
-        MetricTile("音つき", "THINKLET", Modifier.weight(1f), FieldBerry)
-    }
-}
-
-@Composable
-private fun InsectRarityCatalog(discoveredIds: Set<String>) {
-    val insects = SpeciesCandidates
-        .filter { it.category == SpeciesCategory.Insect }
-        .sortedWith(compareByDescending<SpeciesCandidate> { it.rarity.score }.thenBy { it.commonName })
-
-    AdventureCard(tint = FieldYellow, filled = false) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            SectionTitle(
-                title = "昆虫レア図鑑",
-                subtitle = "AIのよそうが候補に近いと、レア度つきで発見になります。",
-            )
-            insects.forEach { insect ->
-                InsectRow(insect, discovered = insect.id in discoveredIds)
-            }
-        }
-    }
-}
-
-@Composable
-private fun InsectRow(insect: SpeciesCandidate, discovered: Boolean) {
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-        StatusPill(if (discovered) "発見" else "未発見", if (discovered) FieldGreen else FieldTextMuted)
-        Column(modifier = Modifier.weight(1f)) {
-            Text(insect.commonName, color = Color(0xFF111816), fontWeight = FontWeight.ExtraBold)
-            Text(insect.scientificName, color = FieldTextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        RarityPill(insect.rarity)
-    }
-}
-
-@Composable
 private fun ObservationCard(observation: Observation, onDelete: () -> Unit) {
     val species = SpeciesCandidates.find { it.id == observation.candidateId }
     val isThinklet = observation.note.contains("THINKLET")
-    val notePreview = observation.note
-        .lineSequence()
-        .filterNot { it.startsWith("THINKLETから") }
-        .take(2)
-        .joinToString(" / ")
 
     AdventureCard(tint = observation.category.accentColor(), filled = false) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             ObservationImage(
                 uri = observation.photoUri,
                 modifier = Modifier
-                    .size(96.dp)
+                    .fillMaxWidth()
                     .aspectRatio(1f),
             )
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    StatusPill(observation.category.label, observation.category.accentColor())
-                    if (isThinklet) StatusPill("THINKLET", FieldYellow)
-                    RarityPill(observation.rarity)
-                }
-                Text(
-                    if (isThinklet && species == null) "AIのよそう: ${observation.customName}" else observation.customName,
-                    color = Color(0xFF111816),
-                    fontWeight = FontWeight.ExtraBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    species?.scientificName ?: "未同定",
-                    color = FieldTextMuted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(formatDate(observation.observedAtMillis), color = FieldTextMuted, maxLines = 1)
-                Text(
-                    "${observation.environment} / ${observation.latitude.format5()}, ${observation.longitude.format5()}",
-                    color = FieldTextMuted,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (notePreview.isNotBlank()) {
-                    Text(notePreview, color = FieldTextMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
-                FieldButton(
-                    text = "削除",
-                    tint = FieldCoral,
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = onDelete,
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                StatusPill(observation.category.label, observation.category.accentColor())
+                if (isThinklet) StatusPill("AI", FieldYellow)
+                RarityPill(observation.rarity)
             }
+            Text(
+                if (isThinklet && species == null) observation.customName else observation.customName,
+                color = Color(0xFF111816),
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(formatDate(observation.observedAtMillis), color = FieldTextMuted, maxLines = 1)
+            FieldButton(
+                text = "削除",
+                tint = FieldCoral,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onDelete,
+            )
         }
     }
 }

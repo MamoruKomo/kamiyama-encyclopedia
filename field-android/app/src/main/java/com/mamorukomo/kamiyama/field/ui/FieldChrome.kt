@@ -33,18 +33,16 @@ internal fun FieldHeader(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(FieldPanel)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(modifier = Modifier.weight(1f)) {
-                    StatusPill("KAMIYAMA QUEST", FieldSky)
                     Text(
                         "神山いきものずかん",
                         color = FieldInk,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.ExtraBold,
-                        modifier = Modifier.padding(top = 4.dp),
                     )
                     Text(
                         activeTab.title,
@@ -56,20 +54,7 @@ internal fun FieldHeader(
                 }
                 DiscoveryCounter(observations.size)
             }
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = FieldGreen.copy(alpha = 0.08f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, FieldGreen.copy(alpha = 0.18f)),
-            ) {
-                Text(
-                    text = "ミッション: $message",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    color = FieldTextMuted,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            StatusPill(message, FieldGreen)
         }
     }
 }
