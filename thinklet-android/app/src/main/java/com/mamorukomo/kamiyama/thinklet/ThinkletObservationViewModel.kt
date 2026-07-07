@@ -9,6 +9,8 @@ import android.graphics.BitmapFactory
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Build
 import android.os.Looper
@@ -30,6 +32,7 @@ import com.google.mlkit.vision.label.ImageLabel
 import com.google.mlkit.vision.label.ImageLabeling
 import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -109,6 +112,9 @@ class ThinkletObservationViewModel : ViewModel() {
 
     private var isBound = false
     private var lastButtonAtMs = 0L
+    private val toneGenerator = runCatching {
+        ToneGenerator(AudioManager.STREAM_NOTIFICATION, TONE_VOLUME)
+    }.getOrNull()
 
     private val sideButtonKeyCodes = setOf(
         KeyEvent.KEYCODE_STEM_PRIMARY,
@@ -155,6 +161,7 @@ class ThinkletObservationViewModel : ViewModel() {
         if (_state.value.isCapturing) {
             return
         }
+        playTone(ToneGenerator.TONE_PROP_BEEP, TONE_SHORT_MS)
         viewModelScope.launch {
             _state.value = _state.value.copy(
                 status = if (sendAfterCapture) "撮影して同期APIへ送ります..." else "撮影しています...",
@@ -176,6 +183,7 @@ class ThinkletObservationViewModel : ViewModel() {
                     status = "撮影に失敗: ${error.message}",
                     isCapturing = false,
                 )
+                playTone(ToneGenerator.TONE_PROP_NACK, TONE_LONG_MS)
             }
         }
     }
@@ -210,6 +218,7 @@ class ThinkletObservationViewModel : ViewModel() {
                         status = "AI判定して同期しました: ${analyzedPayload.label}",
                         isSending = false,
                     )
+                    playSuccessTone()
                     Toast.makeText(context, "AI同期しました", Toast.LENGTH_SHORT).show()
                 }
                 .onFailure { error ->
@@ -217,6 +226,7 @@ class ThinkletObservationViewModel : ViewModel() {
                         status = "同期送信に失敗: ${error.message}",
                         isSending = false,
                     )
+                    playTone(ToneGenerator.TONE_PROP_NACK, TONE_LONG_MS)
                     Toast.makeText(context, "同期送信に失敗しました", Toast.LENGTH_SHORT).show()
                 }
         }
@@ -244,6 +254,7 @@ class ThinkletObservationViewModel : ViewModel() {
     private suspend fun captureObservationPayload(context: Context): ThinkletObservationPayload {
         val photoFile = createPhotoFile(context)
         takePicture(photoFile, context)
+        playTone(ToneGenerator.TONE_PROP_ACK, TONE_SHORT_MS)
         val guess = classifyNature(context, photoFile)
         _state.value = _state.value.copy(status = "写真OK。位置情報を取得しています...")
         val location = readBestLocation(context)
@@ -460,11 +471,35 @@ class ThinkletObservationViewModel : ViewModel() {
         return Bitmap.createScaledBitmap(bitmap, width, height, true)
     }
 
+    private fun playSuccessTone() {
+        viewModelScope.launch {
+            playTone(ToneGenerator.TONE_PROP_ACK, TONE_SHORT_MS)
+            delay(140)
+            playTone(ToneGenerator.TONE_PROP_ACK, TONE_SHORT_MS)
+        }
+    }
+
+    private fun playTone(toneType: Int, durationMs: Int) {
+        runCatching {
+            toneGenerator?.startTone(toneType, durationMs)
+        }.onFailure { error ->
+            Log.w(TAG, "音フィードバックに失敗: ${error.message}")
+        }
+    }
+
+    override fun onCleared() {
+        toneGenerator?.release()
+        super.onCleared()
+    }
+
     private companion object {
         const val TAG = "KamiyamaThinklet"
         const val BUTTON_COOLDOWN_MS = 1500L
         const val GPS_LOCATION_TIMEOUT_MS = 2500L
         const val NETWORK_LOCATION_TIMEOUT_MS = 1500L
+        const val TONE_VOLUME = 85
+        const val TONE_SHORT_MS = 120
+        const val TONE_LONG_MS = 260
     }
 }
 
