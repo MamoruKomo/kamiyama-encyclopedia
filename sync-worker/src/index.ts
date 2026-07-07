@@ -57,7 +57,7 @@ type CandidateReferenceImage = {
 
 const DEFAULT_OPENAI_MODEL = 'gpt-5.4-mini';
 const REFERENCE_IMAGE_CACHE_TTL_SECONDS = 60 * 60 * 24 * 14;
-const MAX_REFERENCE_IMAGES_PER_CATEGORY = 5;
+const MAX_REFERENCE_IMAGES_PER_CATEGORY = 8;
 
 const PLANT_CANDIDATES = [
   {
@@ -126,6 +126,24 @@ const INSECT_CANDIDATES = [
     hint: '花に来る小型のミツバチ。全体に黒っぽく、腹部の縞が見えることがある。',
     visualKeywords: ['小型のハチ', '全体に黒っぽい', '腹部に細い縞', '花に止まって蜜を吸う'],
     seasonMonths: [3, 4, 5, 6, 7, 8, 9, 10],
+  },
+  {
+    commonName: 'カブトムシ',
+    aliases: ['甲虫', 'カブト', '角のある虫', 'rhinoceros beetle'],
+    scientificName: 'Trypoxylus dichotomus',
+    rarity: 'rare',
+    hint: '夏の夜、クヌギやコナラの樹液に集まる大型の甲虫。オスは長い角が目印。',
+    visualKeywords: ['大きな黒褐色の甲虫', 'オスは頭に長い角', '丸く光沢のある体', '樹液や夜の灯りに来る'],
+    seasonMonths: [6, 7, 8],
+  },
+  {
+    commonName: 'ノコギリクワガタ',
+    aliases: ['クワガタ', '鋸鍬形', 'stag beetle'],
+    scientificName: 'Prosopocoilus inclinatus',
+    rarity: 'rare',
+    hint: '夏に樹液へ集まるクワガタ。オスはのこぎりのような大あごが特徴。',
+    visualKeywords: ['黒から赤褐色の甲虫', 'オスは湾曲した大あご', '大あごに小さな歯が並ぶ', '樹液に集まる'],
+    seasonMonths: [6, 7, 8],
   },
   {
     commonName: 'テングチョウ',
@@ -407,8 +425,9 @@ async function analyzeSpeciesPhoto(
                 '参考写真はGBIFの公開観察写真です。観察写真そのものと参考写真を比較して、色、形、模様、葉・翅・実の特徴を優先してください。',
                 '端末側の簡易ラベルより、画像と候補表の一致を優先してください。',
                 '自信が低い場合は無理に候補名へ寄せず、未同定の植物または未同定の虫にしてください。',
-                '候補表にない虫は commonName を「未同定の虫」、scientificName を null、rarity を "common" にしてください。',
-                '候補表にない植物は commonName を「未同定の植物」、scientificName を null、rarity を "common" にしてください。',
+                '候補表にない虫や植物でも、写真から一般的な種名を高い自信で判断できる場合は、その日本語名と学名候補を返してください。',
+                '候補表にも一般的な種名にも自信がない虫は commonName を「未同定の虫」、scientificName を null、rarity を "common" にしてください。',
+                '候補表にも一般的な種名にも自信がない植物は commonName を「未同定の植物」、scientificName を null、rarity を "common" にしてください。',
                 '植物または虫ではない場合は category を "unknown" にしてください。',
                 '危険な虫の可能性がある場合は、reason に「近づかず先生に知らせる」ことを短く含めてください。',
                 `植物候補表: ${JSON.stringify(toPromptCandidates(PLANT_CANDIDATES))}`,
