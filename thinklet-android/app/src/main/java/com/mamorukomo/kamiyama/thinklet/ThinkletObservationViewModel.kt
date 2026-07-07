@@ -7,8 +7,11 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
 import android.net.Uri
+import android.os.Build
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
@@ -34,6 +37,7 @@ import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -42,6 +46,7 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -234,6 +239,7 @@ class ThinkletObservationViewModel : ViewModel() {
         val photoFile = createPhotoFile(context)
         takePicture(photoFile, context)
         val label = classifyImage(context, photoFile)
+        _state.value = _state.value.copy(status = "写真OK。位置情報を取得しています...")
         val location = readBestLocation(context)
         val observedAt = System.currentTimeMillis()
         return ThinkletObservationPayload(
@@ -292,7 +298,7 @@ class ThinkletObservationViewModel : ViewModel() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun readBestLocation(context: Context): Location? {
+    private suspend fun readBestLocation(context: Context): Location? {
         val hasFine = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_FINE_LOCATION
@@ -306,12 +312,77 @@ class ThinkletObservationViewModel : ViewModel() {
         }
 
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-            .filter { provider -> manager.isProviderEnabled(provider) }
-
-        return providers
-            .mapNotNull { provider -> manager.getLastKnownLocation(provider) }
+        val fresh = requestFreshLocation(context, manager, hasFine)
+        val lastKnown = readLastKnownLocation(manager, hasFine)
+        return listOfNotNull(fresh, lastKnown)
             .maxByOrNull { location -> location.time }
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun requestFreshLocation(
+        context: Context,
+        manager: LocationManager,
+        hasFine: Boolean,
+    ): Location? {
+        val providers = preferredProviders(manager, hasFine)
+        for (provider in providers) {
+            val timeoutMs = if (provider == LocationManager.GPS_PROVIDER) {
+                GPS_LOCATION_TIMEOUT_MS
+            } else {
+                NETWORK_LOCATION_TIMEOUT_MS
+            }
+            val location = withTimeoutOrNull(timeoutMs) {
+                requestSingleProviderLocation(context, manager, provider)
+            }
+            if (location != null) {
+                return location
+            }
+        }
+        return null
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun requestSingleProviderLocation(
+        context: Context,
+        manager: LocationManager,
+        provider: String,
+    ): Location? = withContext(Dispatchers.Main) {
+        suspendCancellableCoroutine { continuation ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val executor = Executor { command -> ContextCompat.getMainExecutor(context).execute(command) }
+                manager.getCurrentLocation(provider, null, executor) { location ->
+                    if (continuation.isActive) {
+                        continuation.resume(location)
+                    }
+                }
+            } else {
+                val listener = LocationListener { location ->
+                    if (continuation.isActive) {
+                        continuation.resume(location)
+                    }
+                }
+                manager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+                continuation.invokeOnCancellation { manager.removeUpdates(listener) }
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun readLastKnownLocation(manager: LocationManager, hasFine: Boolean): Location? {
+        return preferredProviders(manager, hasFine)
+            .mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }
+            .maxByOrNull { location -> location.time }
+    }
+
+    private fun preferredProviders(manager: LocationManager, hasFine: Boolean): List<String> {
+        val candidates = if (hasFine) {
+            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        } else {
+            listOf(LocationManager.NETWORK_PROVIDER)
+        }
+        return candidates.filter { provider ->
+            runCatching { manager.isProviderEnabled(provider) }.getOrDefault(false)
+        }
     }
 
     private fun inferCategory(label: String?): String {
@@ -368,6 +439,8 @@ class ThinkletObservationViewModel : ViewModel() {
     private companion object {
         const val TAG = "KamiyamaThinklet"
         const val BUTTON_COOLDOWN_MS = 1500L
+        const val GPS_LOCATION_TIMEOUT_MS = 2500L
+        const val NETWORK_LOCATION_TIMEOUT_MS = 1500L
     }
 }
 

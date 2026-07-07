@@ -36,13 +36,13 @@ import androidx.core.net.toUri
 import com.mamorukomo.kamiyama.field.data.Rarity
 import com.mamorukomo.kamiyama.field.data.SpeciesCategory
 
-internal val FieldGreen = Color(0xFF2F8F5B)
-internal val FieldYellow = Color(0xFFE2A72E)
-internal val FieldCoral = Color(0xFFD95E4F)
-internal val FieldSky = Color(0xFF3778A8)
+internal val FieldGreen = Color(0xFF2F9F68)
+internal val FieldYellow = Color(0xFFE6AC35)
+internal val FieldCoral = Color(0xFFE66A57)
+internal val FieldSky = Color(0xFF3F88B8)
 internal val FieldInk = Color(0xFF111816)
 internal val FieldPanel = Color(0xFFFFFFFF)
-internal val FieldPanelAlt = Color(0xFFF3F6F2)
+internal val FieldPanelAlt = Color(0xFFF7FAF5)
 internal val FieldTextMuted = Color(0xFF66736C)
 
 private val cardShape = RoundedCornerShape(8.dp)
@@ -59,9 +59,29 @@ internal fun AppCard(
         color = FieldPanel,
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE0E6E1)),
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+        shadowElevation = 1.dp,
     ) {
         Box(modifier = Modifier.padding(contentPadding)) {
+            content()
+        }
+    }
+}
+
+@Composable
+internal fun MissionCard(
+    modifier: Modifier = Modifier,
+    tint: Color = FieldGreen,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        modifier = modifier,
+        shape = cardShape,
+        color = tint.copy(alpha = 0.10f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, tint.copy(alpha = 0.25f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Box(modifier = Modifier.padding(16.dp)) {
             content()
         }
     }
@@ -107,7 +127,7 @@ internal fun FieldButton(
     Button(
         enabled = enabled,
         onClick = onClick,
-        modifier = modifier.height(52.dp),
+        modifier = modifier.height(50.dp),
         shape = RoundedCornerShape(8.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = tint,
@@ -129,7 +149,7 @@ internal fun StatusPill(
 ) {
     Surface(
         modifier = modifier,
-        color = tint.copy(alpha = 0.12f),
+        color = tint.copy(alpha = 0.14f),
         shape = CircleShape,
         contentColor = tint,
     ) {

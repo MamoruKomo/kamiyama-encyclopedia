@@ -26,6 +26,7 @@ import com.mamorukomo.kamiyama.field.ui.FieldPanelAlt
 import com.mamorukomo.kamiyama.field.ui.FieldSky
 import com.mamorukomo.kamiyama.field.ui.FieldTextMuted
 import com.mamorukomo.kamiyama.field.ui.FieldYellow
+import com.mamorukomo.kamiyama.field.ui.MissionCard
 import com.mamorukomo.kamiyama.field.ui.MetricTile
 import com.mamorukomo.kamiyama.field.ui.SectionTitle
 import com.mamorukomo.kamiyama.field.ui.StatusPill
@@ -49,7 +50,7 @@ internal fun SyncScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            AppCard {
+            MissionCard(tint = FieldSky) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatusPill("THINKLET", FieldSky)
@@ -91,7 +92,7 @@ internal fun SyncScreen(
             }
         }
         item {
-            AppCard {
+            MissionCard(tint = FieldGreen) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     SectionTitle("たんけんのながれ")
                     StepRow("1", "THINKLETで写真を撮る", FieldCoral)
