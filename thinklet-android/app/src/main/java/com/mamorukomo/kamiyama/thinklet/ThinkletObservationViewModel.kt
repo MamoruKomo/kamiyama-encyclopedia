@@ -151,8 +151,10 @@ class ThinkletObservationViewModel : ViewModel() {
                     status = "採集カメラ準備完了。サイドボタンで撮影して同期します。",
                     isCameraReady = true
                 )
+                Log.i(TAG, "camera_ready")
             } catch (error: Throwable) {
                 _state.value = _state.value.copy(status = "カメラ初期化に失敗: ${error.message}")
+                Log.e(TAG, "camera_bind_failed", error)
             }
         }
     }
@@ -167,8 +169,13 @@ class ThinkletObservationViewModel : ViewModel() {
                 status = if (sendAfterCapture) "撮影して同期APIへ送ります..." else "撮影しています...",
                 isCapturing = true,
             )
+            Log.i(TAG, "capture_started sendAfterCapture=$sendAfterCapture")
             try {
                 val payload = captureObservationPayload(context)
+                Log.i(
+                    TAG,
+                    "capture_payload_ready id=${payload.id} label=${payload.label} category=${payload.category} location=${payload.latitude},${payload.longitude}"
+                )
                 _state.value = ThinkletObservationState(
                     status = "撮影完了: ${payload.label}",
                     latestPayload = payload,
@@ -183,6 +190,7 @@ class ThinkletObservationViewModel : ViewModel() {
                     status = "撮影に失敗: ${error.message}",
                     isCapturing = false,
                 )
+                Log.e(TAG, "capture_failed", error)
                 playTone(ToneGenerator.TONE_PROP_NACK, TONE_LONG_MS)
             }
         }
@@ -203,6 +211,7 @@ class ThinkletObservationViewModel : ViewModel() {
 
         viewModelScope.launch {
             _state.value = _state.value.copy(status = "同期APIへ送信しています...", isSending = true)
+            Log.i(TAG, "sync_post_started id=${payload.id}")
             val result = runCatching { postObservation(endpoint, payload) }
             result
                 .onSuccess { serverResult ->
@@ -218,6 +227,10 @@ class ThinkletObservationViewModel : ViewModel() {
                         status = "AI判定して同期しました: ${analyzedPayload.label}",
                         isSending = false,
                     )
+                    Log.i(
+                        TAG,
+                        "sync_post_success id=${payload.id} label=${analyzedPayload.label} category=${analyzedPayload.category} confidence=${analyzedPayload.confidence}"
+                    )
                     playSuccessTone()
                     Toast.makeText(context, "AI同期しました", Toast.LENGTH_SHORT).show()
                 }
@@ -226,6 +239,7 @@ class ThinkletObservationViewModel : ViewModel() {
                         status = "同期送信に失敗: ${error.message}",
                         isSending = false,
                     )
+                    Log.e(TAG, "sync_post_failed id=${payload.id}", error)
                     playTone(ToneGenerator.TONE_PROP_NACK, TONE_LONG_MS)
                     Toast.makeText(context, "同期送信に失敗しました", Toast.LENGTH_SHORT).show()
                 }
@@ -254,10 +268,16 @@ class ThinkletObservationViewModel : ViewModel() {
     private suspend fun captureObservationPayload(context: Context): ThinkletObservationPayload {
         val photoFile = createPhotoFile(context)
         takePicture(photoFile, context)
+        Log.i(TAG, "photo_saved path=${photoFile.absolutePath} bytes=${photoFile.length()}")
         playTone(ToneGenerator.TONE_PROP_ACK, TONE_SHORT_MS)
         val guess = classifyNature(context, photoFile)
+        Log.i(TAG, "mlkit_guess label=${guess.label} category=${guess.category} confidence=${guess.confidence}")
         _state.value = _state.value.copy(status = "写真OK。位置情報を取得しています...")
         val location = readBestLocation(context)
+        Log.i(
+            TAG,
+            "location_read lat=${location?.latitude} lon=${location?.longitude} accuracy=${location?.takeIf { it.hasAccuracy() }?.accuracy}"
+        )
         val observedAt = System.currentTimeMillis()
         return ThinkletObservationPayload(
             id = "thinklet-$observedAt",
