@@ -1,5 +1,6 @@
 package com.mamorukomo.kamiyama.field.ui
 
+import android.content.Context
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -14,6 +15,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import com.mamorukomo.kamiyama.field.BuildConfig
 import com.mamorukomo.kamiyama.field.LocationFix
 import com.mamorukomo.kamiyama.field.data.LatLng
@@ -52,12 +54,19 @@ fun KamiyamaFieldApp(
     )
 
     MaterialTheme(colorScheme = colorScheme) {
+        val context = LocalContext.current
         var observations by remember { mutableStateOf(store.loadObservations()) }
         var activeTab by remember { mutableStateOf(AppTab.Sync) }
         var selectedObservation by remember { mutableStateOf<Observation?>(null) }
         var currentPoint by remember { mutableStateOf(LatLng(33.9676, 134.3503)) }
         var isSyncing by remember { mutableStateOf(false) }
         val syncClient = remember { SyncClient(BuildConfig.SYNC_API_URL.trim()) }
+        val syncPrefs = remember(context) {
+            context.getSharedPreferences(SYNC_PREFS_NAME, Context.MODE_PRIVATE)
+        }
+        var lastObservationSyncAt by remember {
+            mutableStateOf(syncPrefs.getLong(LAST_OBSERVATION_SYNC_AT_KEY, 0L))
+        }
         val scope = rememberCoroutineScope()
         var message by remember {
             mutableStateOf("THINKLETで撮った発見を、ここで受け取ります。")
@@ -72,10 +81,17 @@ fun KamiyamaFieldApp(
                 isSyncing = true
                 message = "THINKLETの発見をさがしています..."
                 runCatching {
-                    val synced = syncClient.pullObservations()
+                    val result = syncClient.pullObservations(lastObservationSyncAt)
+                    val synced = result.observations
                     val knownIds = observations.map { it.id }.toSet()
                     val fresh = synced.filter { it.id !in knownIds }
-                    synced.forEach(store::saveObservation)
+                    fresh.forEach(store::saveObservation)
+                    if (result.serverTimeMillis > lastObservationSyncAt) {
+                        lastObservationSyncAt = result.serverTimeMillis
+                        syncPrefs.edit()
+                            .putLong(LAST_OBSERVATION_SYNC_AT_KEY, result.serverTimeMillis)
+                            .apply()
+                    }
                     observations = store.loadObservations()
                     fresh.firstOrNull()?.let { observation ->
                         selectedObservation = observation
@@ -153,3 +169,6 @@ fun KamiyamaFieldApp(
         }
     }
 }
+
+private const val SYNC_PREFS_NAME = "kamiyama-sync"
+private const val LAST_OBSERVATION_SYNC_AT_KEY = "last_observation_sync_at"

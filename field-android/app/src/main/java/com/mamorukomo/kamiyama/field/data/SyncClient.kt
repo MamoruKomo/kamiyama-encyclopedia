@@ -6,15 +6,21 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
+data class SyncResult(
+    val observations: List<Observation>,
+    val serverTimeMillis: Long,
+)
+
 class SyncClient(private val endpoint: String) {
     val isConfigured: Boolean = endpoint.isNotBlank()
 
-    suspend fun pullObservations(): List<Observation> {
+    suspend fun pullObservations(sinceMillis: Long = 0L): SyncResult {
         if (!isConfigured) {
-            return emptyList()
+            return SyncResult(emptyList(), sinceMillis)
         }
         return withContext(Dispatchers.IO) {
-            val connection = (URL("${endpoint.trimEnd('/')}/observations").openConnection() as HttpURLConnection)
+            val query = if (sinceMillis > 0L) "?since=$sinceMillis" else ""
+            val connection = (URL("${endpoint.trimEnd('/')}/observations$query").openConnection() as HttpURLConnection)
                 .apply {
                     requestMethod = "GET"
                     connectTimeout = 10000
@@ -34,38 +40,40 @@ class SyncClient(private val endpoint: String) {
         }
     }
 
-    private fun parseObservations(raw: String): List<Observation> {
+    private fun parseObservations(raw: String): SyncResult {
         val root = JSONObject(raw)
-        val observations = root.optJSONArray("observations") ?: return emptyList()
-        return buildList {
+        val serverTime = root.optLong("serverTime", System.currentTimeMillis())
+        val observations = root.optJSONArray("observations") ?: return SyncResult(emptyList(), serverTime)
+        val knownObservations = buildList {
             for (index in 0 until observations.length()) {
                 val item = observations.optJSONObject(index) ?: continue
-                add(item.toObservation())
+                item.toObservationOrNull()?.let(::add)
             }
         }
+        return SyncResult(knownObservations, serverTime)
     }
 
-    private fun JSONObject.toObservation(): Observation {
-        val analysis = optJSONObject("aiAnalysis")
+    private fun JSONObject.toObservationOrNull(): Observation? {
+        val analysis = optJSONObject("aiAnalysis") ?: return null
         val isThinklet = optText("source") == "THINKLET" || optText("id")?.startsWith("thinklet-") == true
         val point = LatLng(
             latitude = optDoubleOrNull("latitude") ?: KamiyamaCenter.latitude,
             longitude = optDoubleOrNull("longitude") ?: KamiyamaCenter.longitude,
         )
         val observedAt = normalizeObservedAt(opt("observedAt"))
-        val category = when (analysis?.optText("category") ?: optText("category")) {
+        val category = when (analysis.optText("category")) {
             "insect" -> SpeciesCategory.Insect
-            else -> SpeciesCategory.Plant
+            "plant" -> SpeciesCategory.Plant
+            else -> return null
         }
-        val label = analysis?.optText("commonName")
-            ?: optText("aiLabel")
-            ?: optText("label")
-            ?: "Thinklet観察"
+        val label = analysis.optText("commonName")
+            ?.takeUnless { it.isUndeterminedName() }
+            ?: return null
         val matchedCandidate = matchCandidate(category, analysis, label)
         val candidate = matchedCandidate
             ?: if (isThinklet) null else suggestCandidates(category, point, observedAt).firstOrNull()?.candidate
         val note = buildNote(this, analysis)
-        val aiRarity = analysis?.optRarity()
+        val aiRarity = analysis.optRarity()
         val rarity = when {
             aiRarity != null -> aiRarity
             category == SpeciesCategory.Insect && candidate != null -> candidate.rarity
@@ -141,6 +149,14 @@ class SyncClient(private val endpoint: String) {
         return optString(name)
             .trim()
             .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+    }
+
+    private fun String.isUndeterminedName(): Boolean {
+        val trimmed = trim()
+        return trimmed == "未同定" ||
+            trimmed.startsWith("未同定の") ||
+            trimmed.equals("unknown", ignoreCase = true) ||
+            trimmed.equals("undetermined", ignoreCase = true)
     }
 
     private fun JSONObject.optDoubleOrNull(name: String): Double? {
