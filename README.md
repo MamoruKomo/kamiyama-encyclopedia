@@ -81,6 +81,8 @@ THINKLETアプリでは、カメラ撮影、GPS取得、撮影時刻取得、ML 
 
 `sync-worker/` にCloudflare Worker + KVの同期APIを追加しています。これをデプロイすると、THINKLETはWeb画面を開かずに写真つき観察をPOSTできます。Workerに `OPENAI_API_KEY` を設定している場合は、写真をAI分析して、AIのよそう、学名候補、信頼度、根拠、レア度を観察に付与します。Android Studio版アプリは「うけとる」画面から未取り込み観察を取得します。
 
+AI判定では、候補表だけでなくGBIFの公開APIから候補生物の参考写真URLを取得し、観察写真と一緒にOpenAIへ渡します。参考写真はアプリや観察データとして保存せず、WorkerのKVに短期間キャッシュして使います。ネット写真はライセンスが混ざるため、MVPでは「判定補助」に限定し、図鑑内の写真は子どもがTHINKLETで撮ったものを主役にします。
+
 Worker側:
 
 ```bash

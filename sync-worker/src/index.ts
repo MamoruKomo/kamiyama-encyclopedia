@@ -37,83 +37,124 @@ type SpeciesAnalysis = {
 
 type RarityValue = 'common' | 'uncommon' | 'rare' | 'special';
 
+type CandidateProfile = {
+  commonName: string;
+  aliases: readonly string[];
+  scientificName: string;
+  rarity: RarityValue;
+  hint: string;
+  visualKeywords: readonly string[];
+  seasonMonths: readonly number[];
+  safety?: string;
+};
+
+type CandidateReferenceImage = {
+  candidate: CandidateProfile;
+  url: string;
+  source: 'GBIF';
+  license?: string;
+};
+
 const DEFAULT_OPENAI_MODEL = 'gpt-5.4-mini';
+const REFERENCE_IMAGE_CACHE_TTL_SECONDS = 60 * 60 * 24 * 14;
+const MAX_REFERENCE_IMAGES_PER_CATEGORY = 5;
 
 const PLANT_CANDIDATES = [
   {
     commonName: 'ヤブソテツ',
+    aliases: ['ヤブソテツ類', 'シダ', 'つやのあるシダ'],
     scientificName: 'Cyrtomium fortunei',
     rarity: 'common',
     hint: '林縁や石垣にある、つやのあるシダ。葉のまとまりが見えると判断しやすい。',
+    visualKeywords: ['羽状に並ぶ厚めの小葉', '濃い緑で光沢のある葉', '花や実は目立たない', '石垣や林縁に群生'],
+    seasonMonths: [1, 2, 3, 4, 5, 10, 11, 12],
   },
   {
     commonName: 'ヒメウズ',
+    aliases: ['姫烏頭', '小さな白い花'],
     scientificName: 'Semiaquilegia adoxoides',
     rarity: 'uncommon',
     hint: '春に小さな花をつける草。道端や林縁に低く咲く。',
+    visualKeywords: ['細い茎', '小さな白から淡桃色の花', '丸みのある小葉', '背が低い草姿'],
+    seasonMonths: [2, 3, 4, 5],
   },
   {
     commonName: 'マンリョウ',
+    aliases: ['万両', '赤い実の低木'],
     scientificName: 'Ardisia crenata',
     rarity: 'common',
     hint: '赤い実と光沢のある葉が目印。林の下や半日陰に多い。',
+    visualKeywords: ['赤い丸い実が房状につく', '濃緑で光沢のある楕円形の葉', '葉の縁が波打つ', '低い常緑低木'],
+    seasonMonths: [1, 2, 11, 12],
   },
   {
     commonName: 'シュロ',
+    aliases: ['棕櫚', 'ワジュロ', 'ヤシのような木'],
     scientificName: 'Trachycarpus fortunei',
     rarity: 'common',
     hint: '扇形の大きな葉が特徴。庭木や林縁で見つかりやすい。',
+    visualKeywords: ['扇形に大きく広がる葉', '幹に茶色い繊維が残る', 'ヤシに似た姿', '庭木や集落周辺'],
+    seasonMonths: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
   },
   {
     commonName: 'ジュズダマ',
+    aliases: ['数珠玉', '硬い丸い実'],
     scientificName: 'Coix lacryma-jobi',
     rarity: 'rare',
     hint: '水辺や湿った草地に出る。硬い丸い実が連なる。',
+    visualKeywords: ['硬く丸い灰色から黒っぽい実', 'トウモロコシに似た細長い葉', '水辺や湿地の草むら', '実が数珠のように見える'],
+    seasonMonths: [8, 9, 10, 11],
   },
-] as const satisfies ReadonlyArray<{
-  commonName: string;
-  scientificName: string;
-  rarity: RarityValue;
-  hint: string;
-}>;
+] as const satisfies ReadonlyArray<CandidateProfile>;
 
 const INSECT_CANDIDATES = [
   {
     commonName: 'キイロスズメバチ',
+    aliases: ['黄色いスズメバチ', 'スズメバチ'],
     scientificName: 'Vespa simillima xanthoptera',
     rarity: 'uncommon',
     hint: '黄色と黒の大型ハチ。安全上、巣や個体に近づきすぎない。',
+    visualKeywords: ['黄色と黒のしま模様', '大型で腰がくびれたハチ', '顔や胸に黄色が目立つ', '巣や樹液周辺にいることがある'],
+    seasonMonths: [5, 6, 7, 8, 9, 10, 11],
+    safety: '危険なハチなので近づかず先生に知らせる。',
   },
   {
     commonName: 'ニホンミツバチ',
+    aliases: ['日本蜜蜂', 'ミツバチ'],
     scientificName: 'Apis cerana',
     rarity: 'rare',
     hint: '花に来る小型のミツバチ。全体に黒っぽく、腹部の縞が見えることがある。',
+    visualKeywords: ['小型のハチ', '全体に黒っぽい', '腹部に細い縞', '花に止まって蜜を吸う'],
+    seasonMonths: [3, 4, 5, 6, 7, 8, 9, 10],
   },
   {
     commonName: 'テングチョウ',
+    aliases: ['天狗蝶', '鼻が長い蝶'],
     scientificName: 'Libythea lepita',
     rarity: 'uncommon',
     hint: '顔先が突き出て見える蝶。翅は褐色から橙色の模様。',
+    visualKeywords: ['顔先が天狗の鼻のように突き出る', '褐色の翅に橙色の斑', '翅の外側が角ばる', '枯れ葉に似て見える'],
+    seasonMonths: [3, 4, 5, 6, 10, 11],
   },
   {
     commonName: 'ベニシジミ',
+    aliases: ['紅小灰蝶', '小さいオレンジの蝶'],
     scientificName: 'Lycaena phlaeas daimio',
     rarity: 'common',
     hint: '小型で橙色が目立つ蝶。草地や畑の縁に多い。',
+    visualKeywords: ['小型の蝶', '前翅が鮮やかな橙色', '黒い斑点', '草地で低く飛ぶ'],
+    seasonMonths: [3, 4, 5, 6, 7, 8, 9, 10, 11],
   },
   {
     commonName: 'ツマグロヒョウモン',
+    aliases: ['褄黒豹紋', 'オレンジのヒョウ柄蝶'],
     scientificName: 'Argynnis hyperbius',
     rarity: 'common',
     hint: '橙色のヒョウ柄模様を持つ蝶。花の多い場所で見つかりやすい。',
+    visualKeywords: ['中型から大型の蝶', '橙色に黒いヒョウ柄', 'メスは翅の先が黒っぽい', '花に止まることが多い'],
+    seasonMonths: [5, 6, 7, 8, 9, 10, 11],
   },
-] as const satisfies ReadonlyArray<{
-  commonName: string;
-  scientificName: string;
-  rarity: RarityValue;
-  hint: string;
-}>;
+] as const satisfies ReadonlyArray<CandidateProfile>;
 
 const JSON_HEADERS = {
   'content-type': 'application/json; charset=utf-8',
@@ -328,6 +369,22 @@ async function analyzeSpeciesPhoto(
     return null;
   }
 
+  const referenceImages = await loadReferenceImages(env);
+  const referenceContent = referenceImages.flatMap((reference, index) => [
+    {
+      type: 'input_text' as const,
+      text: [
+        `参考写真${index + 1}: ${reference.candidate.commonName} / ${reference.candidate.scientificName}`,
+        `出典: ${reference.source}${reference.license ? ` / license: ${reference.license}` : ''}`,
+        `見分け方: ${reference.candidate.visualKeywords.join('、')}`,
+      ].join('\n'),
+    },
+    {
+      type: 'input_image' as const,
+      image_url: reference.url,
+    },
+  ]);
+
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
@@ -346,13 +403,17 @@ async function analyzeSpeciesPhoto(
                 '神山町の小学生向け自然観察アプリに登録するため、この写真の生物を推定してください。',
                 'これは授業や探検で使うため、断定しすぎず「AIのよそう」として安全で短い表現にしてください。',
                 '虫または植物が写っている場合は、下の候補表と照合してください。',
-                '候補表に強く一致する生き物は、その日本語名・学名・レア度を返してください。',
+                '候補表と参考写真に強く一致する生き物は、その日本語名・学名・レア度を返してください。',
+                '参考写真はGBIFの公開観察写真です。観察写真そのものと参考写真を比較して、色、形、模様、葉・翅・実の特徴を優先してください。',
+                '端末側の簡易ラベルより、画像と候補表の一致を優先してください。',
+                '自信が低い場合は無理に候補名へ寄せず、未同定の植物または未同定の虫にしてください。',
                 '候補表にない虫は commonName を「未同定の虫」、scientificName を null、rarity を "common" にしてください。',
                 '候補表にない植物は commonName を「未同定の植物」、scientificName を null、rarity を "common" にしてください。',
                 '植物または虫ではない場合は category を "unknown" にしてください。',
                 '危険な虫の可能性がある場合は、reason に「近づかず先生に知らせる」ことを短く含めてください。',
-                `植物候補表: ${JSON.stringify(PLANT_CANDIDATES)}`,
-                `昆虫候補表: ${JSON.stringify(INSECT_CANDIDATES)}`,
+                `植物候補表: ${JSON.stringify(toPromptCandidates(PLANT_CANDIDATES))}`,
+                `昆虫候補表: ${JSON.stringify(toPromptCandidates(INSECT_CANDIDATES))}`,
+                `参考写真数: ${referenceImages.length}`,
                 'JSONだけを返してください。',
                 '{"category":"plant|insect|unknown","commonName":"日本語名または未同定の植物/虫","scientificName":"学名またはnull","rarity":"common|uncommon|rare|special|null","confidence":0.0,"reason":"短い根拠"}',
                 `端末側の簡易ラベル: ${payload.label ?? 'なし'}`,
@@ -362,6 +423,7 @@ async function analyzeSpeciesPhoto(
               type: 'input_image',
               image_url: photoDataUrl,
             },
+            ...referenceContent,
           ],
         },
       ],
@@ -420,6 +482,128 @@ async function analyzeSpeciesPhoto(
     confidence,
     reason,
   };
+}
+
+function toPromptCandidates(candidates: readonly CandidateProfile[]) {
+  return candidates.map((candidate) => ({
+    commonName: candidate.commonName,
+    aliases: candidate.aliases,
+    scientificName: candidate.scientificName,
+    rarity: candidate.rarity,
+    hint: candidate.hint,
+    visualKeywords: candidate.visualKeywords,
+    seasonMonths: candidate.seasonMonths,
+    safety: candidate.safety,
+  }));
+}
+
+async function loadReferenceImages(env: Env): Promise<CandidateReferenceImage[]> {
+  const candidateGroups = [
+    PLANT_CANDIDATES.slice(0, MAX_REFERENCE_IMAGES_PER_CATEGORY),
+    INSECT_CANDIDATES.slice(0, MAX_REFERENCE_IMAGES_PER_CATEGORY),
+  ];
+  const loaded = await Promise.all(
+    candidateGroups.flatMap((candidates) => (
+      candidates.map((candidate) => loadReferenceImage(candidate, env))
+    )),
+  );
+  return loaded.filter((item): item is CandidateReferenceImage => item != null);
+}
+
+async function loadReferenceImage(
+  candidate: CandidateProfile,
+  env: Env,
+): Promise<CandidateReferenceImage | null> {
+  const cacheKey = `ref-image:${candidate.scientificName}`;
+  const cached = await env.OBSERVATIONS.get(cacheKey);
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached) as CandidateReferenceImage;
+      if (parsed.url?.startsWith('https://')) {
+        return { ...parsed, candidate };
+      }
+    } catch {
+      // Ignore a malformed cache entry and refresh it below.
+    }
+  }
+
+  const reference = await fetchGbifReferenceImage(candidate);
+  if (!reference) {
+    return null;
+  }
+  await env.OBSERVATIONS.put(cacheKey, JSON.stringify(reference), {
+    expirationTtl: REFERENCE_IMAGE_CACHE_TTL_SECONDS,
+  });
+  return reference;
+}
+
+async function fetchGbifReferenceImage(
+  candidate: CandidateProfile,
+): Promise<CandidateReferenceImage | null> {
+  const url = new URL('https://api.gbif.org/v1/occurrence/search');
+  url.searchParams.set('scientificName', candidate.scientificName);
+  url.searchParams.set('mediaType', 'StillImage');
+  url.searchParams.set('hasCoordinate', 'true');
+  url.searchParams.set('limit', '8');
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { accept: 'application/json' },
+    });
+    if (!response.ok) {
+      console.error(JSON.stringify({
+        message: 'gbif_reference_fetch_failed',
+        scientificName: candidate.scientificName,
+        status: response.status,
+      }));
+      return null;
+    }
+
+    const data = await response.json<{
+      results?: Array<{
+        media?: Array<{
+          type?: string;
+          identifier?: string;
+          license?: string;
+        }>;
+      }>;
+    }>();
+    const media = data.results
+      ?.flatMap((result) => result.media ?? [])
+      .find((item) => (
+        item.type === 'StillImage' &&
+        typeof item.identifier === 'string' &&
+        item.identifier.startsWith('https://') &&
+        isReusableImageLicense(item.license)
+      ));
+
+    if (!media?.identifier) {
+      return null;
+    }
+    return {
+      candidate,
+      url: media.identifier,
+      source: 'GBIF',
+      license: media.license,
+    };
+  } catch (error) {
+    console.error(JSON.stringify({
+      message: 'gbif_reference_fetch_error',
+      scientificName: candidate.scientificName,
+      error: String(error),
+    }));
+    return null;
+  }
+}
+
+function isReusableImageLicense(license: string | undefined): boolean {
+  if (!license) {
+    return false;
+  }
+  const normalized = license.toLowerCase();
+  return normalized.includes('creativecommons.org') ||
+    normalized.includes('cc0') ||
+    normalized.includes('publicdomain');
 }
 
 function findPlantCandidate(
