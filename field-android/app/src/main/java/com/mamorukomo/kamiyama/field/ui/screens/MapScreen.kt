@@ -59,9 +59,9 @@ internal fun MapScreen(
         item {
             AppCard {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SectionTitle("記録地点", "写真を保存した位置が地図に表示されます。")
+                    SectionTitle("たんけんマップ", "THINKLETで撮った場所がピンになります。")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MetricTile("記録", observations.size.toString(), Modifier.weight(1f), FieldGreen)
+                        MetricTile("発見", observations.size.toString(), Modifier.weight(1f), FieldGreen)
                         MetricTile("現在地", "${currentPoint.latitude.format5()}, ${currentPoint.longitude.format5()}", Modifier.weight(1f), FieldSky)
                     }
                 }

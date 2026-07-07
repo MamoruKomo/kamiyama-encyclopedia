@@ -37,6 +37,46 @@ type SpeciesAnalysis = {
 
 type RarityValue = 'common' | 'uncommon' | 'rare' | 'special';
 
+const DEFAULT_OPENAI_MODEL = 'gpt-5.4-mini';
+
+const PLANT_CANDIDATES = [
+  {
+    commonName: 'ヤブソテツ',
+    scientificName: 'Cyrtomium fortunei',
+    rarity: 'common',
+    hint: '林縁や石垣にある、つやのあるシダ。葉のまとまりが見えると判断しやすい。',
+  },
+  {
+    commonName: 'ヒメウズ',
+    scientificName: 'Semiaquilegia adoxoides',
+    rarity: 'uncommon',
+    hint: '春に小さな花をつける草。道端や林縁に低く咲く。',
+  },
+  {
+    commonName: 'マンリョウ',
+    scientificName: 'Ardisia crenata',
+    rarity: 'common',
+    hint: '赤い実と光沢のある葉が目印。林の下や半日陰に多い。',
+  },
+  {
+    commonName: 'シュロ',
+    scientificName: 'Trachycarpus fortunei',
+    rarity: 'common',
+    hint: '扇形の大きな葉が特徴。庭木や林縁で見つかりやすい。',
+  },
+  {
+    commonName: 'ジュズダマ',
+    scientificName: 'Coix lacryma-jobi',
+    rarity: 'rare',
+    hint: '水辺や湿った草地に出る。硬い丸い実が連なる。',
+  },
+] as const satisfies ReadonlyArray<{
+  commonName: string;
+  scientificName: string;
+  rarity: RarityValue;
+  hint: string;
+}>;
+
 const INSECT_CANDIDATES = [
   {
     commonName: 'キイロスズメバチ',
@@ -292,7 +332,7 @@ async function analyzeSpeciesPhoto(
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: env.OPENAI_MODEL || 'gpt-4o-mini',
+      model: env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL,
       input: [
         {
           role: 'user',
@@ -300,12 +340,15 @@ async function analyzeSpeciesPhoto(
             {
               type: 'input_text',
               text: [
-                '神山町の自然観察アプリに登録するため、この写真の生物を判定してください。',
-                '特に昆虫を分類できるように、虫が写っている場合は下の候補表と照合してください。',
-                '候補表に強く一致する昆虫は、その日本語名・学名・レア度を返してください。',
-                '候補表にない虫、または画像が不明瞭な虫は commonName を「未同定の虫」、scientificName を null、rarity を "common" にしてください。',
+                '神山町の小学生向け自然観察アプリに登録するため、この写真の生物を推定してください。',
+                'これは授業や探検で使うため、断定しすぎず「AIのよそう」として安全で短い表現にしてください。',
+                '虫または植物が写っている場合は、下の候補表と照合してください。',
+                '候補表に強く一致する生き物は、その日本語名・学名・レア度を返してください。',
+                '候補表にない虫は commonName を「未同定の虫」、scientificName を null、rarity を "common" にしてください。',
+                '候補表にない植物は commonName を「未同定の植物」、scientificName を null、rarity を "common" にしてください。',
                 '植物または虫ではない場合は category を "unknown" にしてください。',
-                '断定しすぎず、画像から分かる範囲で答えてください。',
+                '危険な虫の可能性がある場合は、reason に「近づかず先生に知らせる」ことを短く含めてください。',
+                `植物候補表: ${JSON.stringify(PLANT_CANDIDATES)}`,
                 `昆虫候補表: ${JSON.stringify(INSECT_CANDIDATES)}`,
                 'JSONだけを返してください。',
                 '{"category":"plant|insect|unknown","commonName":"日本語名または未同定の植物/虫","scientificName":"学名またはnull","rarity":"common|uncommon|rare|special|null","confidence":0.0,"reason":"短い根拠"}',
@@ -352,9 +395,13 @@ async function analyzeSpeciesPhoto(
   const matchedInsect = category === 'insect'
     ? findInsectCandidate(commonName, scientificName)
     : null;
+  const matchedPlant = category === 'plant'
+    ? findPlantCandidate(commonName, scientificName)
+    : null;
   const rarity = matchedInsect?.rarity
+    ?? matchedPlant?.rarity
     ?? normalizeRarity(parsed.rarity)
-    ?? (category === 'insect' ? 'common' : null);
+    ?? (category === 'insect' || category === 'plant' ? 'common' : null);
   const confidence = typeof parsed.confidence === 'number'
     ? Math.max(0, Math.min(1, parsed.confidence))
     : 0.5;
@@ -364,12 +411,22 @@ async function analyzeSpeciesPhoto(
 
   return {
     category,
-    commonName: matchedInsect?.commonName ?? commonName,
-    scientificName: matchedInsect?.scientificName ?? scientificName,
+    commonName: matchedInsect?.commonName ?? matchedPlant?.commonName ?? commonName,
+    scientificName: matchedInsect?.scientificName ?? matchedPlant?.scientificName ?? scientificName,
     rarity,
     confidence,
     reason,
   };
+}
+
+function findPlantCandidate(
+  commonName: string,
+  scientificName: string | null,
+): (typeof PLANT_CANDIDATES)[number] | null {
+  return PLANT_CANDIDATES.find((candidate) => (
+    candidate.commonName === commonName ||
+    (scientificName != null && candidate.scientificName === scientificName)
+  )) ?? null;
 }
 
 function findInsectCandidate(

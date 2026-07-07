@@ -7,15 +7,12 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
 import android.location.LocationListener
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import com.mamorukomo.kamiyama.field.data.KamiyamaCenter
 import com.mamorukomo.kamiyama.field.data.LatLng
 import com.mamorukomo.kamiyama.field.data.ObservationStore
@@ -25,7 +22,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.osmdroid.config.Configuration
-import java.io.File
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 
@@ -40,7 +36,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             KamiyamaFieldApp(
                 store = observationStore,
-                createPhotoUri = ::createPhotoUri,
                 currentLocation = ::currentLocation,
             )
         }
@@ -106,17 +101,6 @@ class MainActivity : ComponentActivity() {
                 runCatching { manager.getLastKnownLocation(provider) }.getOrNull()
             }
             .maxByOrNull { it.time }
-    }
-
-    private fun createPhotoUri(): Uri {
-        val directory = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "observations")
-            .apply { mkdirs() }
-        val file = File(directory, "observation-${System.currentTimeMillis()}.jpg")
-        return FileProvider.getUriForFile(
-            this,
-            "${packageName}.fileprovider",
-            file,
-        )
     }
 
     private fun hasLocationPermission(): Boolean {

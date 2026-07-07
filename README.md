@@ -1,31 +1,31 @@
 # 神山生物図鑑 MVP
 
-神山町を歩きながら植物と虫を撮影し、自分だけの観察ピンと図鑑を育てるスマホ向けWebアプリです。GitHub Pagesで配信する前提で、Expo / React Native Web寄りに実装しています。
+神山町を歩きながらTHINKLETで植物と虫を撮影し、自分だけの観察ピンと図鑑を育てるスマホ向けアプリです。スマホ側は、THINKLETから届いた発見を受け取り、地図と図鑑で確認する役割です。
 
 ## MVPでできること
 
 - OpenStreetMap上に神山町周辺の自然レイヤーを表示
 - GBIF由来の植物・虫の周辺記録を候補ピンとして表示
-- カメラで写真撮影
-- GPSと撮影時刻を観察記録に保存
+- THINKLETで写真撮影
+- THINKLET側でGPSと撮影時刻を観察記録に保存
 - 写真・日時・場所・候補生物・レア度をIndexedDBにローカル保存
 - 発見済みの観察を図鑑として一覧表示
 - THINKLET Androidアプリから写真つき観察を取り込み
-- 同期APIにOpenAIキーを設定した場合、写真から植物/虫をAI判定
+- 同期APIにOpenAIキーを設定した場合、写真から植物/虫を「AIのよそう」として分析
 
 ## 方針
 
-通常のWeb/Androidアプリ単体では「植物 / 虫」の大分類と位置・季節・周辺記録から候補を出します。AI同定が必要な場合は `sync-worker/` にOpenAI APIキーを置き、GitHub Pagesや端末アプリにはAPIキーを置かない構成にしています。
+AI同定が必要な場合は `sync-worker/` にOpenAI APIキーを置き、GitHub Pagesや端末アプリにはAPIキーを置かない構成にしています。小学生向けの体験として、AI結果は正解の断定ではなく「AIのよそう」として表示します。
 
 ## ミニマムシステム構成
 
-今回のAndroid Studio版MVPは、まず次の3つだけを確実に動かす構成に戻しています。
+Android Studio版MVPは、THINKLET撮影を前提に次の3つだけを確実に動かす構成にしています。
 
-1. `記録`: カメラ起動、撮影前の現在地取得、写真URI・座標・精度・撮影時刻の保存
-2. `地図`: OpenStreetMap上に現在地と保存済み観察ピンを表示
-3. `図鑑`: SQLiteに保存した観察の写真、名前、日時、場所、レア度を一覧表示
+1. `うけとる`: THINKLETから届いた写真つき観察を取り込む
+2. `マップ`: OpenStreetMap上に現在地と保存済み観察ピンを表示
+3. `ずかん`: SQLiteに保存した観察の写真、AIのよそう、日時、場所、レア度を一覧表示
 
-端末内の保存先は `field-android` のSQLiteです。サーバーなしでもスマホ単体で記録できます。THINKLETからのAI判定済み観察は任意の追加経路として `sync-worker` 経由で取り込みます。
+スマホ側の保存先は `field-android` のSQLiteです。撮影はTHINKLET、写真分析は `sync-worker`、確認はスマホアプリという最小構成です。
 
 ## ファイル構成
 
@@ -79,7 +79,7 @@ THINKLETアプリでは、カメラ撮影、GPS取得、撮影時刻取得、ML 
 
 ### Webを起動しない同期
 
-`sync-worker/` にCloudflare Worker + KVの同期APIを追加しています。これをデプロイすると、THINKLETはWeb画面を開かずに写真つき観察をPOSTできます。Workerに `OPENAI_API_KEY` を設定している場合は、写真をAI判定して、判定名・学名候補・信頼度・根拠を観察に付与します。Web図鑑は起動時に、Android Studio版アプリは図鑑画面の「AI同期を取り込む」から未取り込み観察を取得します。
+`sync-worker/` にCloudflare Worker + KVの同期APIを追加しています。これをデプロイすると、THINKLETはWeb画面を開かずに写真つき観察をPOSTできます。Workerに `OPENAI_API_KEY` を設定している場合は、写真をAI分析して、AIのよそう、学名候補、信頼度、根拠、レア度を観察に付与します。Android Studio版アプリは「うけとる」画面から未取り込み観察を取得します。
 
 Worker側:
 
@@ -90,7 +90,7 @@ npx wrangler kv namespace create OBSERVATIONS
 # 表示されたidを sync-worker/wrangler.jsonc の kv_namespaces[0].id へ設定
 npx wrangler secret put SYNC_WRITE_TOKEN
 npx wrangler secret put OPENAI_API_KEY
-# 必要ならモデル変更
+# 必要ならモデル変更。未設定時は sync-worker 側のデフォルトモデルを使います
 # npx wrangler secret put OPENAI_MODEL
 npm run deploy
 ```
@@ -132,14 +132,13 @@ https://mamorukomo.github.io/kamiyama-encyclopedia/?syncEndpoint=https://YOUR_WO
 
 実装内容:
 
-- Material 3 + Jetpack Composeの統一UI
+- 小学生向けにしたMaterial 3 + Jetpack ComposeのシンプルUI
 - OpenStreetMap表示
-- 神山町周辺の自然レイヤーと候補生物スポット表示
-- カメラアプリで写真撮影
-- GPS、撮影時刻、写真URIを観察記録に保存
+- THINKLETから届いた写真つき観察の取り込み
+- GPS、撮影時刻、写真、AIのよそうを観察記録に保存
 - SQLiteローカル保存
 - 発見済み図鑑一覧、レア度、場所、日時表示
-- 同期APIからAI判定済みTHINKLET観察をSQLiteへ取り込み
+- 同期APIからAI分析済みTHINKLET観察をSQLiteへ取り込み
 
 ビルド:
 
@@ -155,7 +154,7 @@ cd field-android
 ./gradlew installDebug
 ```
 
-このAndroid Studio版は、ローカル撮影では植物/虫の分類と、場所・季節・周辺記録から候補を出します。THINKLETから送られた写真は同期API側でAI判定され、図鑑画面の「AI同期を取り込む」でSQLiteに保存できます。
+このAndroid Studio版はスマホで撮影しません。THINKLETから送られた写真を同期API側でAI分析し、アプリの「うけとる」画面からSQLiteに保存します。
 
 ## データ
 

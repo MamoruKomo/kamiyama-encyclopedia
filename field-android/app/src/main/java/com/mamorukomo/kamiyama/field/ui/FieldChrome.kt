@@ -37,7 +37,7 @@ internal fun FieldHeader(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "神山生物図鑑",
+                        "神山いきものずかん",
                         color = FieldInk,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
@@ -50,10 +50,10 @@ internal fun FieldHeader(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                StatusPill("${observations.size}件", FieldGreen)
+                StatusPill("発見 ${observations.size}", FieldGreen)
             }
             Text(
-                text = message,
+                text = "ミッション: $message",
                 color = FieldTextMuted,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 2,
@@ -108,6 +108,12 @@ private fun FieldTabButton(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            Text(
+                tab.token,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
             Text(tab.label, fontWeight = FontWeight.Bold, maxLines = 1)
         }
     }

@@ -118,9 +118,9 @@ class SyncClient(private val endpoint: String) {
         val aiConfidence = analysis?.optDoubleOrNull("confidence")
         if (aiName != null) {
             lines += if (aiConfidence != null) {
-                "AI判定: $aiName (${(aiConfidence * 100).toInt()}%)"
+                "AIのよそう: $aiName (${(aiConfidence * 100).toInt()}%)"
             } else {
-                "AI判定: $aiName"
+                "AIのよそう: $aiName"
             }
         }
         analysis?.optText("scientificName")

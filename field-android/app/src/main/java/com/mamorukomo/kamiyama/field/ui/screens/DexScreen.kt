@@ -63,14 +63,14 @@ internal fun DexScreen(
         item {
             AppCard {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SectionTitle("発見一覧", "スマホ撮影とTHINKLET同期の記録をここで確認します。")
+                    SectionTitle("発見ずかん", "THINKLETから届いた生き物を集めます。")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         MetricTile("観察", observations.size.toString(), Modifier.weight(1f), FieldGreen)
-                        MetricTile("候補種", "${discoveredIds.size}/${SpeciesCandidates.size}", Modifier.weight(1f), FieldYellow)
+                        MetricTile("なまえ", "${discoveredIds.size}/${SpeciesCandidates.size}", Modifier.weight(1f), FieldYellow)
                         MetricTile("レア", rare.toString(), Modifier.weight(1f), FieldCoral)
                     }
                     FieldButton(
-                        text = if (isSyncing) "同期中..." else "THINKLET同期",
+                        text = if (isSyncing) "さがしています..." else "THINKLETからうけとる",
                         enabled = syncEnabled && !isSyncing,
                         modifier = Modifier.fillMaxWidth(),
                         onClick = onSync,
@@ -84,7 +84,7 @@ internal fun DexScreen(
         if (observations.isEmpty()) {
             item {
                 AppCard {
-                    SectionTitle("まだ記録がありません", "記録タブで写真と位置情報を保存してください。")
+                    SectionTitle("まだ発見がありません", "THINKLETで写真を撮ってから、うけとるボタンを押してください。")
                 }
             }
         }
@@ -104,7 +104,7 @@ private fun InsectRarityCatalog(discoveredIds: Set<String>) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle(
                 title = "昆虫レア図鑑",
-                subtitle = "AI分類で一致した昆虫は、種ごとのレア度で記録されます。",
+                subtitle = "AIのよそうが候補に近いと、レア度つきで発見になります。",
             )
             insects.forEach { insect ->
                 InsectRow(insect, discovered = insect.id in discoveredIds)
@@ -150,7 +150,7 @@ private fun ObservationCard(observation: Observation, onDelete: () -> Unit) {
                     RarityPill(observation.rarity)
                 }
                 Text(
-                    if (isThinklet && species == null) "要確認: ${observation.customName}" else observation.customName,
+                    if (isThinklet && species == null) "AIのよそう: ${observation.customName}" else observation.customName,
                     color = Color(0xFF111816),
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,

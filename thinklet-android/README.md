@@ -31,7 +31,7 @@ THINKLET本体にはディスプレイがない前提なので、図鑑・地図
 2. カメラと位置情報を許可
 3. THINKLETのサイドボタンを押す
 4. 撮影、GPS取得、時刻取得、簡易ラベル推定、同期API送信が自動で走る
-5. スマホ側の `field-android` を開き、DEX画面の同期から図鑑へ取り込む
+5. スマホ側の `field-android` を開き、「うけとる」画面から図鑑へ取り込む
 
 画面UIはscrcpyでのデバッグ用です。実運用ではTHINKLET側の画面を見る必要はありません。
 
@@ -44,7 +44,7 @@ kamiyamaSyncApiUrl=https://YOUR_WORKER_URL
 kamiyamaSyncWriteToken=YOUR_SYNC_WRITE_TOKEN
 ```
 
-昆虫をAI分類するには、同期API側にOpenAI APIキーも設定してください。
+昆虫・植物をAIでよそうするには、同期API側にOpenAI APIキーも設定してください。
 
 ```bash
 cd ../sync-worker
@@ -52,7 +52,7 @@ npx wrangler secret put OPENAI_API_KEY
 npx wrangler deploy
 ```
 
-AIは写真から昆虫候補を判定し、キイロスズメバチ、ニホンミツバチ、テングチョウ、ベニシジミ、ツマグロヒョウモンなどの候補に一致した場合は、種名とレア度をスマホ側の図鑑へ同期します。
+AIは写真から植物・昆虫をよそうし、候補に一致した場合は種名とレア度をスマホ側の図鑑へ同期します。結果は正解の断定ではなく「AIのよそう」として扱います。
 
 ## 注意
 

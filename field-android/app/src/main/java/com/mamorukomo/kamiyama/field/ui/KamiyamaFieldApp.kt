@@ -1,6 +1,5 @@
 package com.mamorukomo.kamiyama.field.ui
 
-import android.net.Uri
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -21,21 +20,20 @@ import com.mamorukomo.kamiyama.field.data.LatLng
 import com.mamorukomo.kamiyama.field.data.Observation
 import com.mamorukomo.kamiyama.field.data.ObservationStore
 import com.mamorukomo.kamiyama.field.data.SyncClient
-import com.mamorukomo.kamiyama.field.ui.screens.CaptureScreen
 import com.mamorukomo.kamiyama.field.ui.screens.DexScreen
 import com.mamorukomo.kamiyama.field.ui.screens.MapScreen
+import com.mamorukomo.kamiyama.field.ui.screens.SyncScreen
 import kotlinx.coroutines.launch
 
 internal enum class AppTab(val label: String, val token: String, val title: String) {
-    Capture("記録", "REC", "写真と位置を記録"),
-    Map("地図", "MAP", "記録地点"),
-    Dex("図鑑", "DEX", "発見一覧"),
+    Sync("うけとる", "AI", "THINKLETから発見をうけとる"),
+    Map("マップ", "MAP", "たんけんマップ"),
+    Dex("ずかん", "DEX", "発見ずかん"),
 }
 
 @Composable
 fun KamiyamaFieldApp(
     store: ObservationStore,
-    createPhotoUri: () -> Uri,
     currentLocation: suspend () -> LocationFix,
 ) {
     val colorScheme = lightColorScheme(
@@ -55,14 +53,45 @@ fun KamiyamaFieldApp(
 
     MaterialTheme(colorScheme = colorScheme) {
         var observations by remember { mutableStateOf(store.loadObservations()) }
-        var activeTab by remember { mutableStateOf(AppTab.Capture) }
+        var activeTab by remember { mutableStateOf(AppTab.Sync) }
         var selectedObservation by remember { mutableStateOf<Observation?>(null) }
         var currentPoint by remember { mutableStateOf(LatLng(33.9676, 134.3503)) }
         var isSyncing by remember { mutableStateOf(false) }
         val syncClient = remember { SyncClient(BuildConfig.SYNC_API_URL.trim()) }
         val scope = rememberCoroutineScope()
         var message by remember {
-            mutableStateOf("写真を撮ると、撮影時刻と位置情報を一緒に保存します。")
+            mutableStateOf("THINKLETで撮った発見を、ここで受け取ります。")
+        }
+
+        fun importFromThinklet() {
+            if (!syncClient.isConfigured) {
+                message = "先生へ: field-android/local.properties に kamiyamaSyncApiUrl を設定してください。"
+                return
+            }
+            scope.launch {
+                isSyncing = true
+                message = "THINKLETの発見をさがしています..."
+                runCatching {
+                    val synced = syncClient.pullObservations()
+                    val knownIds = observations.map { it.id }.toSet()
+                    val fresh = synced.filter { it.id !in knownIds }
+                    synced.forEach(store::saveObservation)
+                    observations = store.loadObservations()
+                    fresh.firstOrNull()?.let { observation ->
+                        selectedObservation = observation
+                        currentPoint = LatLng(observation.latitude, observation.longitude)
+                        activeTab = AppTab.Map
+                    }
+                    message = if (fresh.isEmpty()) {
+                        "新しい発見はまだありません。THINKLETで撮ってみよう。"
+                    } else {
+                        "${fresh.size}こ発見! AIのよそうを図鑑に入れました。"
+                    }
+                }.onFailure { error ->
+                    message = "受け取りに失敗しました: ${error.message}"
+                }
+                isSyncing = false
+            }
         }
 
         LaunchedEffect(Unit) {
@@ -85,6 +114,14 @@ fun KamiyamaFieldApp(
                 containerColor = MaterialTheme.colorScheme.background,
             ) { padding ->
                 when (activeTab) {
+                    AppTab.Sync -> SyncScreen(
+                        padding = padding,
+                        observations = observations,
+                        isSyncing = isSyncing,
+                        syncEnabled = syncClient.isConfigured,
+                        onSync = ::importFromThinklet,
+                    )
+
                     AppTab.Map -> MapScreen(
                         padding = padding,
                         observations = observations,
@@ -92,27 +129,8 @@ fun KamiyamaFieldApp(
                         selectedObservation = selectedObservation,
                         onObservationSelected = {
                             selectedObservation = it
-                            message = "${it.customName} を選択しました。"
+                            message = "${it.customName} を見つけた場所です。"
                         },
-                    )
-
-                    AppTab.Capture -> CaptureScreen(
-                        padding = padding,
-                        currentLocation = {
-                            currentLocation().also { fix ->
-                                currentPoint = fix.point
-                            }
-                        },
-                        createPhotoUri = createPhotoUri,
-                        onSaved = { observation ->
-                            store.saveObservation(observation)
-                            observations = store.loadObservations()
-                            selectedObservation = observation
-                            currentPoint = LatLng(observation.latitude, observation.longitude)
-                            activeTab = AppTab.Map
-                            message = "${observation.customName} を図鑑に登録しました。"
-                        },
-                        onMessage = { message = it },
                     )
 
                     AppTab.Dex -> DexScreen(
@@ -120,43 +138,14 @@ fun KamiyamaFieldApp(
                         observations = observations,
                         isSyncing = isSyncing,
                         syncEnabled = syncClient.isConfigured,
-                        onSync = {
-                            if (!syncClient.isConfigured) {
-                                message = "同期API URLが未設定です。field-android/local.properties に kamiyamaSyncApiUrl を設定してください。"
-                            } else {
-                                scope.launch {
-                                    isSyncing = true
-                                    message = "同期APIからAI判定済み観察を取り込んでいます..."
-                                    runCatching {
-                                        val synced = syncClient.pullObservations()
-                                        val knownIds = observations.map { it.id }.toSet()
-                                        val fresh = synced.filter { it.id !in knownIds }
-                                        synced.forEach(store::saveObservation)
-                                        observations = store.loadObservations()
-                                        fresh.firstOrNull()?.let { observation ->
-                                            selectedObservation = observation
-                                            currentPoint = LatLng(observation.latitude, observation.longitude)
-                                            activeTab = AppTab.Map
-                                        }
-                                        message = if (fresh.isEmpty()) {
-                                            "同期APIに新しい観察はありません。"
-                                        } else {
-                                            "${fresh.size}件のAI判定済み観察を図鑑に登録しました。"
-                                        }
-                                    }.onFailure { error ->
-                                        message = "同期取り込みに失敗: ${error.message}"
-                                    }
-                                    isSyncing = false
-                                }
-                            }
-                        },
+                        onSync = ::importFromThinklet,
                         onDelete = { observation ->
                             store.deleteObservation(observation.id)
                             observations = store.loadObservations()
                             if (selectedObservation?.id == observation.id) {
                                 selectedObservation = null
                             }
-                            message = "${observation.customName} を削除しました。"
+                            message = "${observation.customName} をずかんから外しました。"
                         },
                     )
                 }
