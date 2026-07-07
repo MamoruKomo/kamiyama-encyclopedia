@@ -11,16 +11,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,7 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -40,59 +36,49 @@ import androidx.core.net.toUri
 import com.mamorukomo.kamiyama.field.data.Rarity
 import com.mamorukomo.kamiyama.field.data.SpeciesCategory
 
-internal val FieldGreen = Color(0xFF63E6BE)
-internal val FieldYellow = Color(0xFFFFD75A)
-internal val FieldCoral = Color(0xFFFF6A5E)
-internal val FieldSky = Color(0xFF66B7FF)
-internal val FieldViolet = Color(0xFF9B8CFF)
-internal val FieldInk = Color(0xFF07130F)
-internal val FieldPanel = Color(0xFF10231D)
-internal val FieldPanelAlt = Color(0xFF17352B)
-internal val FieldTextMuted = Color(0xFFC2D7CF)
+internal val FieldGreen = Color(0xFF2F8F5B)
+internal val FieldYellow = Color(0xFFE2A72E)
+internal val FieldCoral = Color(0xFFD95E4F)
+internal val FieldSky = Color(0xFF3778A8)
+internal val FieldInk = Color(0xFF111816)
+internal val FieldPanel = Color(0xFFFFFFFF)
+internal val FieldPanelAlt = Color(0xFFF3F6F2)
+internal val FieldTextMuted = Color(0xFF66736C)
 
-private val panelShape = RoundedCornerShape(26.dp)
+private val cardShape = RoundedCornerShape(8.dp)
 
 @Composable
-internal fun ExpeditionPanel(
+internal fun AppCard(
     modifier: Modifier = Modifier,
-    tint: Color = FieldGreen,
     contentPadding: PaddingValues = PaddingValues(16.dp),
     content: @Composable () -> Unit,
 ) {
     Surface(
-        modifier = modifier
-            .border(1.dp, tint.copy(alpha = 0.25f), panelShape),
-        shape = panelShape,
-        color = FieldPanel.copy(alpha = 0.96f),
+        modifier = modifier,
+        shape = cardShape,
+        color = FieldPanel,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE0E6E1)),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
-        Box(
-            modifier = Modifier
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            tint.copy(alpha = 0.12f),
-                            Color.Transparent,
-                            FieldPanelAlt.copy(alpha = 0.34f),
-                        ),
-                    ),
-                )
-                .padding(contentPadding),
-        ) {
+        Box(modifier = Modifier.padding(contentPadding)) {
             content()
         }
     }
 }
 
 @Composable
-internal fun SectionLabel(text: String, color: Color = FieldGreen) {
-    Text(
-        text = text,
-        color = color,
-        style = MaterialTheme.typography.labelSmall,
-        fontWeight = FontWeight.Black,
-    )
+internal fun SectionTitle(
+    title: String,
+    subtitle: String? = null,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, color = FieldInk, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        if (subtitle != null) {
+            Text(subtitle, color = FieldTextMuted, style = MaterialTheme.typography.bodySmall)
+        }
+    }
 }
 
 @Composable
@@ -102,47 +88,11 @@ internal fun MetricTile(
     modifier: Modifier = Modifier,
     tint: Color = FieldGreen,
 ) {
-    Surface(
-        modifier = modifier,
-        color = Color.White.copy(alpha = 0.07f),
-        shape = RoundedCornerShape(18.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(value, color = tint, fontWeight = FontWeight.Black, maxLines = 1)
-            Text(
-                label,
-                color = FieldTextMuted,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+    AppCard(modifier = modifier, contentPadding = PaddingValues(12.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(value, color = tint, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(label, color = FieldTextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
         }
-    }
-}
-
-@Composable
-internal fun RarityPill(rarity: Rarity, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        color = rarity.accentColor().copy(alpha = 0.18f),
-        shape = CircleShape,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            Brush.linearGradient(listOf(rarity.accentColor(), rarity.accentColor().copy(alpha = 0.42f))),
-        ),
-    ) {
-        Text(
-            text = rarity.label,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-            color = rarity.accentColor(),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Black,
-            maxLines = 1,
-        )
     }
 }
 
@@ -151,48 +101,51 @@ internal fun FieldButton(
     text: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    tint: Color = FieldCoral,
+    tint: Color = FieldGreen,
     onClick: () -> Unit,
 ) {
     Button(
         enabled = enabled,
         onClick = onClick,
-        modifier = modifier.height(58.dp),
-        shape = RoundedCornerShape(20.dp),
+        modifier = modifier.height(52.dp),
+        shape = RoundedCornerShape(8.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = tint,
             contentColor = Color.White,
-            disabledContainerColor = Color.White.copy(alpha = 0.08f),
+            disabledContainerColor = Color(0xFFDDE5DF),
             disabledContentColor = FieldTextMuted,
         ),
         contentPadding = PaddingValues(horizontal = 16.dp),
     ) {
-        Text(text, fontWeight = FontWeight.Black, maxLines = 1)
+        Text(text, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
-internal fun FieldOutlineButton(
+internal fun StatusPill(
     text: String,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
     tint: Color = FieldGreen,
-    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    OutlinedButton(
-        enabled = enabled,
-        onClick = onClick,
-        modifier = modifier.height(48.dp),
-        shape = RoundedCornerShape(18.dp),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = tint),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            Brush.linearGradient(listOf(tint, tint.copy(alpha = 0.45f))),
-        ),
-        contentPadding = PaddingValues(horizontal = 14.dp),
+    Surface(
+        modifier = modifier,
+        color = tint.copy(alpha = 0.12f),
+        shape = CircleShape,
+        contentColor = tint,
     ) {
-        Text(text, fontWeight = FontWeight.Black, maxLines = 1)
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
     }
+}
+
+@Composable
+internal fun RarityPill(rarity: Rarity, modifier: Modifier = Modifier) {
+    StatusPill(text = rarity.label, tint = rarity.accentColor(), modifier = modifier)
 }
 
 @Composable
@@ -202,43 +155,25 @@ internal fun CategorySelectorButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    val tint = category.accentColor()
     Surface(
         onClick = onClick,
         modifier = modifier
-            .height(74.dp)
+            .height(56.dp)
             .border(
                 width = 1.dp,
-                color = if (selected) tint else Color.White.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(22.dp),
+                color = if (selected) category.accentColor() else Color(0xFFE0E6E1),
+                shape = RoundedCornerShape(8.dp),
             ),
-        shape = RoundedCornerShape(22.dp),
-        color = if (selected) tint.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.06f),
+        shape = RoundedCornerShape(8.dp),
+        color = if (selected) category.accentColor().copy(alpha = 0.12f) else FieldPanel,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp),
+            modifier = Modifier.padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(tint.copy(alpha = if (selected) 1f else 0.28f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(category.chip.take(1), color = Color.White, fontWeight = FontWeight.Black)
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(category.label, color = Color.White, fontWeight = FontWeight.Black, maxLines = 1)
-                Text(
-                    category.chip,
-                    color = FieldTextMuted,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                )
-            }
+            StatusPill(category.chip, category.accentColor())
+            Text(category.label, color = FieldInk, fontWeight = FontWeight.Bold, maxLines = 1)
         }
     }
 }
@@ -260,11 +195,8 @@ internal fun ObservationImage(uri: String, modifier: Modifier = Modifier) {
     }
     Box(
         modifier = modifier
-            .background(
-                Brush.linearGradient(
-                    listOf(FieldPanelAlt, FieldPanel, FieldInk),
-                ),
-            ),
+            .clip(RoundedCornerShape(8.dp))
+            .background(FieldPanelAlt),
         contentAlignment = Alignment.Center,
     ) {
         if (bitmap != null) {
@@ -276,8 +208,8 @@ internal fun ObservationImage(uri: String, modifier: Modifier = Modifier) {
             )
         } else {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("NO IMAGE", color = FieldTextMuted, fontWeight = FontWeight.Black)
-                Text("FIELD LOG", color = Color.White.copy(alpha = 0.42f), style = MaterialTheme.typography.labelSmall)
+                Text("NO IMAGE", color = FieldTextMuted, fontWeight = FontWeight.Bold)
+                Text("写真なし", color = FieldTextMuted, style = MaterialTheme.typography.labelSmall)
             }
         }
     }

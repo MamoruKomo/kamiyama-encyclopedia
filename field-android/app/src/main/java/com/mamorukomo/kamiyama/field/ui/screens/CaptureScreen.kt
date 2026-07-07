@@ -5,35 +5,28 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,27 +36,25 @@ import com.mamorukomo.kamiyama.field.data.LatLng
 import com.mamorukomo.kamiyama.field.data.Observation
 import com.mamorukomo.kamiyama.field.data.SpeciesCandidate
 import com.mamorukomo.kamiyama.field.data.SpeciesCategory
-import com.mamorukomo.kamiyama.field.data.Suggestion
 import com.mamorukomo.kamiyama.field.data.describeEnvironment
 import com.mamorukomo.kamiyama.field.data.inferRarity
 import com.mamorukomo.kamiyama.field.data.suggestCandidates
+import com.mamorukomo.kamiyama.field.ui.AppCard
 import com.mamorukomo.kamiyama.field.ui.CategorySelectorButton
-import com.mamorukomo.kamiyama.field.ui.ExpeditionPanel
 import com.mamorukomo.kamiyama.field.ui.FieldButton
 import com.mamorukomo.kamiyama.field.ui.FieldCoral
 import com.mamorukomo.kamiyama.field.ui.FieldGreen
-import com.mamorukomo.kamiyama.field.ui.FieldInk
-import com.mamorukomo.kamiyama.field.ui.FieldOutlineButton
-import com.mamorukomo.kamiyama.field.ui.FieldPanel
+import com.mamorukomo.kamiyama.field.ui.FieldPanelAlt
 import com.mamorukomo.kamiyama.field.ui.FieldSky
 import com.mamorukomo.kamiyama.field.ui.FieldTextMuted
 import com.mamorukomo.kamiyama.field.ui.ObservationImage
 import com.mamorukomo.kamiyama.field.ui.RarityPill
-import com.mamorukomo.kamiyama.field.ui.SectionLabel
+import com.mamorukomo.kamiyama.field.ui.SectionTitle
+import com.mamorukomo.kamiyama.field.ui.StatusPill
 import com.mamorukomo.kamiyama.field.ui.accentColor
 import com.mamorukomo.kamiyama.field.ui.format5
 import com.mamorukomo.kamiyama.field.ui.formatDate
-import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 private data class CapturedPhoto(
     val uri: Uri,
@@ -75,34 +66,48 @@ private data class CapturedPhoto(
 @Composable
 internal fun CaptureScreen(
     padding: PaddingValues,
-    currentLocation: () -> LocationFix,
+    currentLocation: suspend () -> LocationFix,
     createPhotoUri: () -> Uri,
     onSaved: (Observation) -> Unit,
     onMessage: (String) -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var category by remember { mutableStateOf(SpeciesCategory.Plant) }
     var capturedPhoto by remember { mutableStateOf<CapturedPhoto?>(null) }
+    var pendingPhoto by remember { mutableStateOf<CapturedPhoto?>(null) }
     var selectedCandidate by remember { mutableStateOf<SpeciesCandidate?>(null) }
     var customName by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
-    var pendingPhoto by remember { mutableStateOf<CapturedPhoto?>(null) }
+    var isPreparing by remember { mutableStateOf(false) }
 
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        if (success) {
-            capturedPhoto = pendingPhoto
+        val photo = pendingPhoto
+        pendingPhoto = null
+        isPreparing = false
+        if (success && photo != null) {
+            capturedPhoto = photo
             selectedCandidate = null
             customName = ""
             note = ""
-            onMessage("スキャン完了。候補を選ぶか、名前を入力して登録できます。")
+            onMessage("写真と位置情報を取得しました。内容を確認して保存してください。")
         } else {
             onMessage("撮影がキャンセルされました。")
         }
     }
+
     val permissionsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { grants ->
-        if (grants[Manifest.permission.CAMERA] == true) {
-            val fix = currentLocation()
+        if (grants[Manifest.permission.CAMERA] != true) {
+            isPreparing = false
+            onMessage("カメラ権限がないため撮影できません。")
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            isPreparing = true
+            val fix = runCatching { currentLocation() }
+                .onFailure { onMessage("位置情報を取得できませんでした。神山町中心を仮の位置として使います。") }
+                .getOrElse { LocationFix(LatLng(33.9676, 134.3503), null) }
             val uri = createPhotoUri()
             pendingPhoto = CapturedPhoto(
                 uri = uri,
@@ -111,23 +116,23 @@ internal fun CaptureScreen(
                 observedAtMillis = System.currentTimeMillis(),
             )
             cameraLauncher.launch(uri)
-        } else {
-            onMessage("カメラ権限がないため撮影できません。")
         }
     }
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(FieldInk, Color(0xFF14251F), FieldInk)))
+            .background(FieldPanelAlt)
             .padding(padding),
-        contentPadding = PaddingValues(14.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            ScannerConsole(
+            CaptureIntro(
                 category = category,
+                isPreparing = isPreparing,
                 onCapture = {
+                    isPreparing = true
                     permissionsLauncher.launch(
                         arrayOf(
                             Manifest.permission.CAMERA,
@@ -139,7 +144,7 @@ internal fun CaptureScreen(
             )
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SpeciesCategory.entries.forEach { item ->
                     CategorySelectorButton(
                         category = item,
@@ -155,22 +160,25 @@ internal fun CaptureScreen(
         }
 
         capturedPhoto?.let { photo ->
-            item {
-                CapturedPreview(photo)
+            item { CapturedPhotoCard(photo) }
+
+            val suggestions = suggestCandidates(category, photo.location, photo.observedAtMillis).take(3)
+            if (suggestions.isNotEmpty()) {
+                item {
+                    SectionTitle("近い候補", "候補を押すと名前とレア度を設定します。")
+                }
+                items(suggestions, key = { it.candidate.id }) { suggestion ->
+                    CandidateRow(
+                        candidate = suggestion.candidate,
+                        selected = selectedCandidate?.id == suggestion.candidate.id,
+                        onClick = {
+                            selectedCandidate = suggestion.candidate
+                            customName = suggestion.candidate.commonName
+                        },
+                    )
+                }
             }
-            item {
-                SectionLabel("MATCH CANDIDATES")
-            }
-            items(suggestCandidates(category, photo.location, photo.observedAtMillis)) { suggestion ->
-                SuggestionCard(
-                    suggestion = suggestion,
-                    selected = selectedCandidate?.id == suggestion.candidate.id,
-                    onClick = {
-                        selectedCandidate = suggestion.candidate
-                        customName = suggestion.candidate.commonName
-                    },
-                )
-            }
+
             item {
                 OutlinedTextField(
                     value = customName,
@@ -186,38 +194,38 @@ internal fun CaptureScreen(
                     onValueChange = { note = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("メモ") },
-                    minLines = 3,
+                    minLines = 2,
                 )
             }
             item {
                 FieldButton(
-                    text = "図鑑に登録",
+                    text = "写真と位置を保存",
                     modifier = Modifier.fillMaxWidth(),
                     tint = FieldGreen,
                     onClick = {
-                        val observedAt = photo.observedAtMillis
                         val candidate = selectedCandidate
-                        val name = customName.trim()
-                            .ifBlank { candidate?.commonName ?: "未同定" }
-                        val observation = Observation(
-                            id = "android-$observedAt",
-                            photoUri = photo.uri.toString(),
-                            category = category,
-                            candidateId = candidate?.id,
-                            customName = name,
-                            note = note.trim(),
-                            latitude = photo.location.latitude,
-                            longitude = photo.location.longitude,
-                            accuracy = photo.accuracy,
-                            observedAtMillis = observedAt,
-                            environment = describeEnvironment(photo.location),
-                            rarity = inferRarity(candidate, photo.location, observedAt),
+                        val observedAt = photo.observedAtMillis
+                        val name = customName.trim().ifBlank { candidate?.commonName ?: "未同定" }
+                        onSaved(
+                            Observation(
+                                id = "android-$observedAt",
+                                photoUri = photo.uri.toString(),
+                                category = category,
+                                candidateId = candidate?.id,
+                                customName = name,
+                                note = note.trim(),
+                                latitude = photo.location.latitude,
+                                longitude = photo.location.longitude,
+                                accuracy = photo.accuracy,
+                                observedAtMillis = observedAt,
+                                environment = describeEnvironment(photo.location),
+                                rarity = inferRarity(candidate, photo.location, observedAt),
+                            ),
                         )
                         capturedPhoto = null
                         selectedCandidate = null
                         customName = ""
                         note = ""
-                        onSaved(observation)
                     },
                 )
             }
@@ -226,156 +234,100 @@ internal fun CaptureScreen(
 }
 
 @Composable
-private fun ScannerConsole(
+private fun CaptureIntro(
     category: SpeciesCategory,
+    isPreparing: Boolean,
     onCapture: () -> Unit,
 ) {
-    ExpeditionPanel(tint = category.accentColor(), contentPadding = PaddingValues(18.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    SectionLabel("FIELD SCANNER", category.accentColor())
-                    Text(
-                        "発見をロックオン",
-                        color = Color.White,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Black,
-                    )
-                    Text(
-                        "写真、GPS、時刻をまとめて記録します。",
-                        color = FieldTextMuted,
-                    )
-                }
-                Surface(
-                    color = category.accentColor().copy(alpha = 0.18f),
-                    shape = CircleShape,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, category.accentColor()),
-                ) {
-                    Text(
-                        category.chip,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                        color = category.accentColor(),
-                        fontWeight = FontWeight.Black,
-                    )
-                }
+    AppCard {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            SectionTitle(
+                title = "写真と位置を記録",
+                subtitle = "撮影前に現在地を取得し、写真・日時・座標をまとめて保存します。",
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatusPill(category.label, category.accentColor())
+                StatusPill("GPS", FieldSky)
+                StatusPill("PHOTO", FieldGreen)
             }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(230.dp)
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(
-                        Brush.radialGradient(
-                            listOf(category.accentColor().copy(alpha = 0.34f), FieldPanel, FieldInk),
-                        ),
-                    )
-                    .border(1.dp, category.accentColor().copy(alpha = 0.38f), RoundedCornerShape(28.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(28.dp)
-                        .border(2.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(24.dp)),
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(64.dp)
-                        .border(2.dp, category.accentColor().copy(alpha = 0.54f), CircleShape),
-                )
-                FieldButton(
-                    text = "撮影して地点を記録",
-                    tint = FieldCoral,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 34.dp),
-                    onClick = onCapture,
-                )
-            }
+            FieldButton(
+                text = if (isPreparing) "準備中..." else "撮影する",
+                enabled = !isPreparing,
+                tint = FieldCoral,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onCapture,
+            )
         }
     }
 }
 
 @Composable
-private fun CapturedPreview(photo: CapturedPhoto) {
-    ExpeditionPanel(tint = FieldSky, contentPadding = PaddingValues(12.dp)) {
+private fun CapturedPhotoCard(photo: CapturedPhoto) {
+    AppCard {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ObservationImage(
                 uri = photo.uri.toString(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .clip(RoundedCornerShape(24.dp)),
+                    .clip(RoundedCornerShape(8.dp)),
             )
+            SectionTitle("取得した情報")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CaptureMetric("時刻", formatDate(photo.observedAtMillis), Modifier.weight(1f))
-                CaptureMetric("環境", describeEnvironment(photo.location), Modifier.weight(1f))
+                InfoBlock("日時", formatDate(photo.observedAtMillis), Modifier.weight(1f))
+                InfoBlock("場所", describeEnvironment(photo.location), Modifier.weight(1f))
             }
             Text(
-                "${photo.location.latitude.format5()}, ${photo.location.longitude.format5()}",
+                "${photo.location.latitude.format5()}, ${photo.location.longitude.format5()}" +
+                    (photo.accuracy?.let { " / 精度 ${it.toInt()}m" } ?: " / 精度不明"),
                 color = FieldTextMuted,
-                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
 }
 
 @Composable
-private fun CaptureMetric(label: String, value: String, modifier: Modifier = Modifier) {
+private fun InfoBlock(label: String, value: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color.White.copy(alpha = 0.07f))
-            .padding(12.dp),
+            .background(Color(0xFFF3F6F2), RoundedCornerShape(8.dp))
+            .padding(10.dp),
     ) {
-        Text(label, color = FieldSky, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
-        Text(value, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(label, color = FieldTextMuted, fontWeight = FontWeight.Bold)
+        Text(value, color = Color(0xFF111816), maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
-private fun SuggestionCard(
-    suggestion: Suggestion,
+private fun CandidateRow(
+    candidate: SpeciesCandidate,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val candidate = suggestion.candidate
-    ExpeditionPanel(
+    AppCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        tint = if (selected) candidate.rarity.accentColor() else candidate.category.accentColor(),
-        contentPadding = PaddingValues(14.dp),
+        contentPadding = PaddingValues(12.dp),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .height(78.dp)
-                    .weight(0.25f)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(candidate.category.accentColor().copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(candidate.category.chip.take(1), color = candidate.category.accentColor(), fontWeight = FontWeight.Black)
-            }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(candidate.commonName, color = Color.White, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f), maxLines = 1)
-                    RarityPill(candidate.rarity)
-                }
-                Text(candidate.scientificName, color = FieldTextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(candidate.commonName, fontWeight = FontWeight.Bold, color = Color(0xFF111816))
                 Text(
-                    "${suggestion.distanceMeters.roundToInt()}m / ${candidate.hint}",
+                    candidate.scientificName,
                     color = FieldTextMuted,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                Text(candidate.hint, color = FieldTextMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                RarityPill(candidate.rarity)
+                if (selected) {
+                    StatusPill("選択中", FieldGreen)
+                }
             }
         }
     }
