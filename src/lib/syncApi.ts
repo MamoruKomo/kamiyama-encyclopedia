@@ -3,6 +3,7 @@ import type { Observation } from '../types/domain';
 
 const ENDPOINT_STORAGE_KEY = 'kamiyamaSyncEndpoint';
 const CURSOR_STORAGE_KEY = 'kamiyamaSyncCursor';
+const DEFAULT_SYNC_ENDPOINT = 'https://kamiyama-encyclopedia-sync.kamiyama-kmc2314.workers.dev';
 
 type SyncResponse = {
   observations?: ThinkletPayload[];
@@ -29,7 +30,7 @@ export function getSyncEndpoint() {
   if (typeof window === 'undefined') {
     return null;
   }
-  return window.localStorage.getItem(ENDPOINT_STORAGE_KEY);
+  return window.localStorage.getItem(ENDPOINT_STORAGE_KEY) ?? DEFAULT_SYNC_ENDPOINT;
 }
 
 export async function pullThinkletObservations(): Promise<Observation[]> {

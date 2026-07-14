@@ -584,7 +584,7 @@ export default {
 
     try {
       if (url.pathname === '/health') {
-        return json({ ok: true }, corsHeaders);
+        return json({ ok: true, aiConfigured: Boolean(env.OPENAI_API_KEY) }, corsHeaders);
       }
 
       if (url.pathname === '/observations' && request.method === 'POST') {
@@ -616,7 +616,8 @@ async function createObservation(
   const now = Date.now();
   const id = sanitizeId(payload.id) ?? `thinklet-${now}-${crypto.randomUUID()}`;
   const photoDataUrl = buildPhotoDataUrl(payload);
-  const aiAnalysis = await analyzeSpeciesPhoto(payload, photoDataUrl, env);
+  const aiAnalysis = await analyzeSpeciesPhoto(payload, photoDataUrl, env)
+    ?? inferSpeciesFromDeviceSignal(payload);
   const normalized: ThinkletObservationPayload = {
     ...payload,
     id,
@@ -1020,6 +1021,62 @@ function isReusableImageLicense(license: string | undefined): boolean {
     normalized.includes('publicdomain');
 }
 
+function inferSpeciesFromDeviceSignal(payload: ThinkletObservationPayload): SpeciesAnalysis | null {
+  const signal = [
+    payload.label,
+    payload.aiLabel,
+    payload.category,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  const beetleCandidate = matchDeviceSignalToInsect(signal);
+  if (!beetleCandidate) {
+    return null;
+  }
+
+  return {
+    category: 'insect',
+    commonName: beetleCandidate.commonName,
+    scientificName: beetleCandidate.scientificName,
+    rarity: beetleCandidate.rarity,
+    confidence: clampConfidence(payload.confidence ?? payload.aiConfidence ?? 0.62),
+    reason: '端末の簡易ラベルからMVP用に候補を補いました。写真AIを有効にすると精度が上がります。',
+  };
+}
+
+function matchDeviceSignalToInsect(signal: string): CandidateProfile | null {
+  const normalized = signal
+    .replace(/[＿_\\-]/g, ' ')
+    .replace(/\\s+/g, ' ')
+    .trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (
+    normalized.includes('stag beetle') ||
+    normalized.includes('クワガタ') ||
+    normalized.includes('鍬形')
+  ) {
+    return findInsectCandidate('ノコギリクワガタ', 'Prosopocoilus inclinatus');
+  }
+
+  if (
+    normalized.includes('rhinoceros beetle') ||
+    normalized.includes('カブト') ||
+    normalized.includes('甲虫') ||
+    normalized.includes('beetle')
+  ) {
+    return findInsectCandidate('カブトムシ', 'Trypoxylus dichotomus');
+  }
+
+  return null;
+}
+
+function clampConfidence(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
 function findPlantCandidate(
   commonName: string,
   scientificName: string | null,
@@ -1034,10 +1091,14 @@ function findPlantCandidate(
 function findInsectCandidate(
   commonName: string,
   scientificName: string | null,
-): (typeof INSECT_CANDIDATES)[number] | null {
+): CandidateProfile | null {
   return INSECT_CANDIDATES.find((candidate) => (
     candidate.commonName === commonName ||
-    candidate.scientificName === scientificName
+    (candidate.aliases as readonly string[]).includes(commonName) ||
+    (scientificName != null && (
+      candidate.scientificName === scientificName ||
+      scientificName.startsWith(`${candidate.scientificName} `)
+    ))
   )) ?? null;
 }
 
