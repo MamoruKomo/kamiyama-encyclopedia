@@ -79,9 +79,9 @@ THINKLETアプリでは、カメラ撮影、GPS取得、撮影時刻取得、ML 
 
 ### Webを起動しない同期
 
-`sync-worker/` にCloudflare Worker + KVの同期APIを追加しています。これをデプロイすると、THINKLETはWeb画面を開かずに写真つき観察をPOSTできます。Workerに `OPENAI_API_KEY` を設定している場合は、写真をAI分析して、AIのよそう、学名候補、信頼度、根拠、レア度を観察に付与します。Android Studio版アプリは「うけとる」画面から未取り込み観察を取得します。
+`sync-worker/` にCloudflare Worker + KVの同期APIを追加しています。これをデプロイすると、THINKLETはWeb画面を開かずに写真つき観察をPOSTできます。無料運用ではTHINKLET側のML KitラベルとWorkerの候補補正だけで動かします。Workerに `AI_MODE=openai` と `OPENAI_API_KEY` を設定した場合だけ、写真をOpenAIで分析して、AIのよそう、学名候補、信頼度、根拠、レア度を観察に付与します。Android Studio版アプリは「うけとる」画面から未取り込み観察を取得します。
 
-AI判定では、候補表だけでなくGBIFの公開APIから候補生物の参考写真URLを取得し、観察写真と一緒にOpenAIへ渡します。参考写真はアプリや観察データとして保存せず、WorkerのKVに短期間キャッシュして使います。ネット写真はライセンスが混ざるため、MVPでは「判定補助」に限定し、図鑑内の写真は子どもがTHINKLETで撮ったものを主役にします。
+OpenAI判定を有効化した場合は、候補表だけでなくGBIFの公開APIから候補生物の参考写真URLを取得し、観察写真と一緒にOpenAIへ渡します。参考写真はアプリや観察データとして保存せず、WorkerのKVに短期間キャッシュして使います。ネット写真はライセンスが混ざるため、MVPでは「判定補助」に限定し、図鑑内の写真は子どもがTHINKLETで撮ったものを主役にします。
 
 Worker側:
 
@@ -91,7 +91,10 @@ npm install
 npx wrangler kv namespace create OBSERVATIONS
 # 表示されたidを sync-worker/wrangler.jsonc の kv_namespaces[0].id へ設定
 npx wrangler secret put SYNC_WRITE_TOKEN
-npx wrangler secret put OPENAI_API_KEY
+# 無料運用ではOPENAI_API_KEYは不要です
+# 本格AIを使う場合だけ設定します
+# npx wrangler secret put AI_MODE # openai
+# npx wrangler secret put OPENAI_API_KEY
 # 必要ならモデル変更。未設定時は sync-worker 側のデフォルトモデルを使います
 # npx wrangler secret put OPENAI_MODEL
 npm run deploy

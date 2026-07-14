@@ -4,6 +4,7 @@ export interface Env {
   SYNC_WRITE_TOKEN?: string;
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
+  AI_MODE?: string;
 }
 
 type ThinkletObservationPayload = {
@@ -56,6 +57,7 @@ type CandidateReferenceImage = {
 };
 
 const DEFAULT_OPENAI_MODEL = 'gpt-5.4-mini';
+const DEFAULT_AI_MODE = 'free';
 const REFERENCE_IMAGE_CACHE_TTL_SECONDS = 60 * 60 * 24 * 14;
 const MAX_REFERENCE_IMAGES_PER_CATEGORY = 8;
 
@@ -584,7 +586,12 @@ export default {
 
     try {
       if (url.pathname === '/health') {
-        return json({ ok: true, aiConfigured: Boolean(env.OPENAI_API_KEY) }, corsHeaders);
+        return json({
+          ok: true,
+          aiMode: getAiMode(env),
+          openaiConfigured: Boolean(env.OPENAI_API_KEY),
+          openaiEnabled: shouldUseOpenAi(env),
+        }, corsHeaders);
       }
 
       if (url.pathname === '/observations' && request.method === 'POST') {
@@ -774,12 +781,20 @@ function buildPhotoDataUrl(payload: ThinkletObservationPayload): string | null {
   return `data:${mimeType};base64,${payload.photoBase64}`;
 }
 
+function getAiMode(env: Env): 'free' | 'openai' {
+  return env.AI_MODE === 'openai' ? 'openai' : DEFAULT_AI_MODE;
+}
+
+function shouldUseOpenAi(env: Env): boolean {
+  return getAiMode(env) === 'openai' && Boolean(env.OPENAI_API_KEY);
+}
+
 async function analyzeSpeciesPhoto(
   payload: ThinkletObservationPayload,
   photoDataUrl: string | null,
   env: Env,
 ): Promise<SpeciesAnalysis | null> {
-  if (!photoDataUrl || !env.OPENAI_API_KEY) {
+  if (!photoDataUrl || !shouldUseOpenAi(env)) {
     return null;
   }
 

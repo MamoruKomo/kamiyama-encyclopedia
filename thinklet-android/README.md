@@ -47,15 +47,16 @@ kamiyamaSyncApiUrl=https://YOUR_WORKER_URL
 kamiyamaSyncWriteToken=YOUR_SYNC_WRITE_TOKEN
 ```
 
-昆虫・植物をAIでよそうするには、同期API側にOpenAI APIキーも設定してください。
+無料運用では、THINKLET側のML Kitラベルと同期API側の候補補正だけで動きます。本格的に写真そのものをOpenAIで分析したい場合だけ、同期API側にOpenAI APIキーと `AI_MODE=openai` を設定してください。
 
 ```bash
 cd ../sync-worker
-npx wrangler secret put OPENAI_API_KEY
+# npx wrangler secret put AI_MODE # openai
+# npx wrangler secret put OPENAI_API_KEY
 npx wrangler deploy
 ```
 
-AIは写真から植物・昆虫をよそうし、候補に一致した場合は種名とレア度をスマホ側の図鑑へ同期します。結果は正解の断定ではなく「AIのよそう」として扱います。
+無料モードでは判定できる種が限られます。たとえば端末ラベルが `beetle` の場合はカブトムシ候補へ補正します。OpenAIモードでは写真から植物・昆虫をよそうし、候補に一致した場合は種名とレア度をスマホ側の図鑑へ同期します。結果は正解の断定ではなく「AIのよそう」として扱います。
 
 ## 注意
 
