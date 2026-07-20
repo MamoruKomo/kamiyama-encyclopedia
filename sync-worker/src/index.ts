@@ -1,10 +1,13 @@
 export interface Env {
   OBSERVATIONS: KVNamespace;
+  OBSERVATION_DB?: D1Database;
+  OBSERVATION_IMAGES?: R2Bucket;
   ALLOWED_ORIGINS?: string;
   SYNC_WRITE_TOKEN?: string;
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
   AI_MODE?: string;
+  MAX_UPLOAD_BYTES?: string;
 }
 
 type ThinkletObservationPayload = {
@@ -37,6 +40,25 @@ type SpeciesAnalysis = {
 };
 
 type RarityValue = 'common' | 'uncommon' | 'rare' | 'special';
+type ObservationStatus =
+  | 'uploaded'
+  | 'classifying'
+  | 'candidate_ready'
+  | 'needs_review'
+  | 'needs_retake'
+  | 'confirmed'
+  | 'rejected'
+  | 'classification_failed';
+
+type BroadCategory =
+  | 'insect'
+  | 'butterfly'
+  | 'beetle'
+  | 'plant'
+  | 'flower'
+  | 'tree'
+  | 'mushroom'
+  | 'unknown';
 
 type CandidateProfile = {
   commonName: string;
@@ -56,10 +78,85 @@ type CandidateReferenceImage = {
   license?: string;
 };
 
+type CandidateSpeciesResult = {
+  species_id: string;
+  reason: string;
+};
+
+type ClassificationInput = {
+  observationId: string;
+  clientObservationId: string;
+  deviceId: string;
+  capturedAt: string;
+  latitude: number | null;
+  longitude: number | null;
+  mlLabels: MlLabel[];
+  imageDataUrl?: string | null;
+};
+
+type ClassificationResult = {
+  broad_category: BroadCategory;
+  candidates: CandidateSpeciesResult[];
+  requires_human_confirmation: boolean;
+  needs_retake: boolean;
+  classifier_mode: 'free' | 'openai';
+  classifier_version: string;
+};
+
+type SpeciesClassifier = {
+  classify(input: ClassificationInput, env: Env): Promise<ClassificationResult>;
+};
+
+type MlLabel = {
+  text: string;
+  confidence?: number | null;
+};
+
+type MultipartValue = string | File;
+
+type ObservationRow = {
+  id: string;
+  client_observation_id: string;
+  device_id: string;
+  captured_at: string;
+  received_at: string;
+  latitude: number | null;
+  longitude: number | null;
+  public_latitude: number | null;
+  public_longitude: number | null;
+  location_accuracy_m: number | null;
+  location_visibility: string;
+  image_key: string;
+  image_sha256: string;
+  ml_labels_json: string;
+  broad_category: string | null;
+  candidate_species_json: string | null;
+  confirmed_species_id: string | null;
+  status: ObservationStatus;
+  classifier_mode: string | null;
+  classifier_version: string | null;
+  quality_score: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
 const DEFAULT_OPENAI_MODEL = 'gpt-5.4-mini';
 const DEFAULT_AI_MODE = 'free';
 const REFERENCE_IMAGE_CACHE_TTL_SECONDS = 60 * 60 * 24 * 14;
 const MAX_REFERENCE_IMAGES_PER_CATEGORY = 8;
+const DEFAULT_MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+const SPECIES_ANALYSIS_SCHEMA = {
+  type: 'object',
+  required: ['category', 'commonName', 'confidence', 'reason'],
+  properties: {
+    category: { enum: ['plant', 'insect', 'unknown'] },
+    commonName: { type: 'string' },
+    scientificName: { type: ['string', 'null'] },
+    rarity: { enum: ['common', 'uncommon', 'rare', 'special', null] },
+    confidence: { type: 'number', minimum: 0, maximum: 1 },
+    reason: { type: 'string' },
+  },
+} as const;
 
 const PLANT_CANDIDATES = [
   {
@@ -576,7 +673,7 @@ const JSON_HEADERS = {
 };
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const corsHeaders = buildCorsHeaders(request, env);
 
@@ -591,7 +688,27 @@ export default {
           aiMode: getAiMode(env),
           openaiConfigured: Boolean(env.OPENAI_API_KEY),
           openaiEnabled: shouldUseOpenAi(env),
+          d1Configured: Boolean(env.OBSERVATION_DB),
+          r2Configured: Boolean(env.OBSERVATION_IMAGES),
         }, corsHeaders);
+      }
+
+      if (url.pathname === '/api/v1/observations' && request.method === 'POST') {
+        return await createObservationV1(request, env, ctx, corsHeaders);
+      }
+
+      if (url.pathname === '/api/v1/observations' && request.method === 'GET') {
+        return await listObservationsV1(url, env, corsHeaders);
+      }
+
+      const imageMatch = url.pathname.match(/^\/api\/v1\/observations\/([^/]+)\/image$/);
+      if (imageMatch && request.method === 'GET') {
+        return await getObservationImage(imageMatch[1], env, corsHeaders);
+      }
+
+      const observationMatch = url.pathname.match(/^\/api\/v1\/observations\/([^/]+)$/);
+      if (observationMatch && request.method === 'PATCH') {
+        return await updateObservationReview(observationMatch[1], request, env, corsHeaders);
       }
 
       if (url.pathname === '/observations' && request.method === 'POST') {
@@ -649,6 +766,821 @@ async function createObservation(
   });
 
   return json({ ok: true, id, observation: normalized }, corsHeaders, 201);
+}
+
+async function createObservationV1(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (!(await isAuthorized(request, env))) {
+    return json({ error: 'unauthorized' }, corsHeaders, 401);
+  }
+  if (!env.OBSERVATION_DB) {
+    return json({
+      error: 'storage_not_configured',
+      message: 'D1 binding is required for /api/v1/observations.',
+    }, corsHeaders, 503);
+  }
+
+  const form = await request.formData();
+  const image = form.get('image');
+  if (!isUploadedFile(image)) {
+    return json({ error: 'image_required' }, corsHeaders, 400);
+  }
+
+  const deviceId = sanitizeRequiredId(form.get('device_id'), 'thinklet');
+  const clientObservationId = sanitizeRequiredId(
+    form.get('client_observation_id'),
+    crypto.randomUUID(),
+  );
+  const duplicate = await findObservationByClient(env.OBSERVATION_DB, deviceId, clientObservationId);
+  if (duplicate) {
+    return json({
+      observation_id: duplicate.id,
+      client_observation_id: duplicate.client_observation_id,
+      status: duplicate.status,
+      duplicate: true,
+      accepted_at: duplicate.received_at,
+    }, corsHeaders);
+  }
+
+  const maxBytes = parseUploadLimit(env);
+  if (image.size <= 0) {
+    return json({ error: 'empty_image' }, corsHeaders, 400);
+  }
+  if (image.size > maxBytes) {
+    return json({ error: 'image_too_large', max_bytes: maxBytes }, corsHeaders, 413);
+  }
+
+  const imageBytes = new Uint8Array(await image.arrayBuffer());
+  const imageType = detectImageType(imageBytes, image.type);
+  if (!imageType) {
+    return json({ error: 'unsupported_image_type' }, corsHeaders, 415);
+  }
+
+  const nowIso = new Date().toISOString();
+  const observationId = crypto.randomUUID();
+  const capturedAt = normalizeIsoDate(form.get('captured_at')) ?? nowIso;
+  const latitude = normalizeLatitude(form.get('latitude'));
+  const longitude = normalizeLongitude(form.get('longitude'));
+  const publicPoint = buildPublicPoint(latitude, longitude);
+  const accuracy = normalizeNumber(form.get('location_accuracy_m'));
+  const qualityScore = normalizeNumber(form.get('quality_score'));
+  const mlLabels = parseMlLabels(form.get('ml_labels_json'));
+  const imageKey = `observations/${deviceId}/${clientObservationId}.${imageType.extension}`;
+  const imageSha256 = await sha256Hex(imageBytes);
+
+  await putObservationImage(env, imageKey, imageBytes, imageType.contentType, {
+    observation_id: observationId,
+    device_id: deviceId,
+    client_observation_id: clientObservationId,
+    sha256: imageSha256,
+  });
+
+  try {
+    await insertObservation(env.OBSERVATION_DB, {
+      id: observationId,
+      client_observation_id: clientObservationId,
+      device_id: deviceId,
+      captured_at: capturedAt,
+      received_at: nowIso,
+      latitude,
+      longitude,
+      public_latitude: publicPoint.latitude,
+      public_longitude: publicPoint.longitude,
+      location_accuracy_m: accuracy,
+      location_visibility: 'public_rounded',
+      image_key: imageKey,
+      image_sha256: imageSha256,
+      ml_labels_json: JSON.stringify(mlLabels),
+      broad_category: null,
+      candidate_species_json: null,
+      confirmed_species_id: null,
+      status: 'uploaded',
+      classifier_mode: null,
+      classifier_version: null,
+      quality_score: qualityScore,
+      created_at: nowIso,
+      updated_at: nowIso,
+    });
+  } catch (error) {
+    await deleteObservationImage(env, imageKey);
+    const existing = await findObservationByClient(env.OBSERVATION_DB, deviceId, clientObservationId);
+    if (existing) {
+      return json({
+        observation_id: existing.id,
+        client_observation_id: existing.client_observation_id,
+        status: existing.status,
+        duplicate: true,
+        accepted_at: existing.received_at,
+      }, corsHeaders);
+    }
+    throw error;
+  }
+
+  ctx.waitUntil(classifyPersistedObservation(env, {
+    observationId,
+    clientObservationId,
+    deviceId,
+    capturedAt,
+    latitude,
+    longitude,
+    mlLabels,
+    imageDataUrl: shouldUseOpenAi(env)
+      ? buildDataUrlFromBytes(imageBytes, imageType.contentType)
+      : null,
+  }));
+
+  return json({
+    observation_id: observationId,
+    client_observation_id: clientObservationId,
+    status: 'uploaded',
+    duplicate: false,
+    accepted_at: nowIso,
+  }, corsHeaders, 201);
+}
+
+async function listObservationsV1(
+  url: URL,
+  env: Env,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (!env.OBSERVATION_DB) {
+    return json({ observations: [], serverTime: Date.now(), storage: 'not_configured' }, corsHeaders);
+  }
+  const since = Number(url.searchParams.get('since') ?? '0');
+  const sinceIso = since > 0 ? new Date(since).toISOString() : '1970-01-01T00:00:00.000Z';
+  const status = url.searchParams.get('status');
+  const includeReview = url.searchParams.get('include_review') === 'true';
+  const allowedStatuses = new Set<ObservationStatus>([
+    'uploaded',
+    'classifying',
+    'candidate_ready',
+    'needs_review',
+    'needs_retake',
+    'confirmed',
+    'rejected',
+    'classification_failed',
+  ]);
+  const filters = ['updated_at > ?'];
+  const binds: Array<string | number> = [sinceIso];
+  if (status && allowedStatuses.has(status as ObservationStatus)) {
+    filters.push('status = ?');
+    binds.push(status);
+  } else if (!includeReview) {
+    filters.push("status = 'confirmed'");
+  }
+
+  const result = await env.OBSERVATION_DB.prepare(
+    `SELECT * FROM observations WHERE ${filters.join(' AND ')} ORDER BY updated_at ASC LIMIT 500`,
+  ).bind(...binds).all<ObservationRow>();
+  const observations = (result.results ?? []).map(rowToApiObservation);
+  return json({ observations, serverTime: Date.now(), storage: 'd1' }, corsHeaders);
+}
+
+async function getObservationImage(
+  observationId: string,
+  env: Env,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (!env.OBSERVATION_DB) {
+    return json({ error: 'storage_not_configured' }, corsHeaders, 503);
+  }
+  const row = await env.OBSERVATION_DB.prepare(
+    'SELECT image_key FROM observations WHERE id = ?',
+  ).bind(observationId).first<{ image_key: string }>();
+  if (!row) {
+    return json({ error: 'not_found' }, corsHeaders, 404);
+  }
+  const image = await getStoredObservationImage(env, row.image_key);
+  if (!image) {
+    return json({ error: 'image_not_found' }, corsHeaders, 404);
+  }
+  const headers = new Headers(corsHeaders);
+  headers.set('content-type', image.contentType);
+  headers.set('cache-control', 'private, max-age=3600');
+  return new Response(image.body, { headers });
+}
+
+async function updateObservationReview(
+  observationId: string,
+  request: Request,
+  env: Env,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (!(await isAuthorized(request, env))) {
+    return json({ error: 'unauthorized' }, corsHeaders, 401);
+  }
+  if (!env.OBSERVATION_DB) {
+    return json({ error: 'storage_not_configured' }, corsHeaders, 503);
+  }
+  const row = await env.OBSERVATION_DB.prepare(
+    'SELECT * FROM observations WHERE id = ?',
+  ).bind(observationId).first<ObservationRow>();
+  if (!row) {
+    return json({ error: 'not_found' }, corsHeaders, 404);
+  }
+
+  const body = await request.json<{
+    action?: string;
+    species_id?: string;
+  }>();
+  const now = new Date().toISOString();
+
+  if (body.action === 'confirm') {
+    const speciesIdValue = typeof body.species_id === 'string' ? body.species_id.trim() : '';
+    const candidates = safeJson<CandidateSpeciesResult[]>(row.candidate_species_json, []);
+    if (!speciesIdValue || !candidates.some((candidate) => candidate.species_id === speciesIdValue)) {
+      return json({ error: 'species_not_in_candidates' }, corsHeaders, 400);
+    }
+    await env.OBSERVATION_DB.prepare(
+      `UPDATE observations
+       SET confirmed_species_id = ?,
+           status = 'confirmed',
+           updated_at = ?
+       WHERE id = ?`,
+    ).bind(speciesIdValue, now, observationId).run();
+    return json({ ok: true, status: 'confirmed', observation_id: observationId }, corsHeaders);
+  }
+
+  if (body.action === 'reject') {
+    await updateObservationStatus(env.OBSERVATION_DB, observationId, 'rejected');
+    return json({ ok: true, status: 'rejected', observation_id: observationId }, corsHeaders);
+  }
+
+  if (body.action === 'needs_review') {
+    await updateObservationStatus(env.OBSERVATION_DB, observationId, 'needs_review');
+    return json({ ok: true, status: 'needs_review', observation_id: observationId }, corsHeaders);
+  }
+
+  if (body.action === 'needs_retake') {
+    await updateObservationStatus(env.OBSERVATION_DB, observationId, 'needs_retake');
+    return json({ ok: true, status: 'needs_retake', observation_id: observationId }, corsHeaders);
+  }
+
+  return json({ error: 'invalid_action' }, corsHeaders, 400);
+}
+
+async function classifyPersistedObservation(
+  env: Env,
+  input: ClassificationInput,
+): Promise<void> {
+  if (!env.OBSERVATION_DB) {
+    return;
+  }
+  await updateObservationStatus(env.OBSERVATION_DB, input.observationId, 'classifying');
+  try {
+    await seedSpeciesCatalog(env.OBSERVATION_DB);
+    const classifier = getClassifier(env);
+    const result = await classifier.classify(input, env);
+    const nextStatus = result.needs_retake
+      ? 'needs_retake'
+      : result.candidates.length > 0
+        ? 'candidate_ready'
+        : 'needs_review';
+    await env.OBSERVATION_DB.prepare(
+      `UPDATE observations
+       SET broad_category = ?,
+           candidate_species_json = ?,
+           status = ?,
+           classifier_mode = ?,
+           classifier_version = ?,
+           updated_at = ?
+       WHERE id = ?`,
+    ).bind(
+      result.broad_category,
+      JSON.stringify(result.candidates.slice(0, 3)),
+      nextStatus,
+      result.classifier_mode,
+      result.classifier_version,
+      new Date().toISOString(),
+      input.observationId,
+    ).run();
+  } catch (error) {
+    console.error(JSON.stringify({
+      message: 'classification_failed',
+      observationId: input.observationId,
+      error: String(error),
+    }));
+    await updateObservationStatus(env.OBSERVATION_DB, input.observationId, 'classification_failed');
+  }
+}
+
+function getClassifier(env: Env): SpeciesClassifier {
+  return shouldUseOpenAi(env) ? new OpenAIClassifier() : new FreeRuleClassifier();
+}
+
+async function seedSpeciesCatalog(db: D1Database): Promise<void> {
+  const now = new Date().toISOString();
+  const species = [
+    ...AI_PLANT_CANDIDATES.map((candidate) => ({ candidate: candidate as CandidateProfile, category: 'plant' as const })),
+    ...INSECT_CANDIDATES.map((candidate) => ({ candidate: candidate as CandidateProfile, category: 'insect' as const })),
+  ];
+  await db.batch(species.map(({ candidate, category }) => db.prepare(
+    `INSERT OR IGNORE INTO species (
+      id,
+      japanese_name,
+      scientific_name,
+      category,
+      description,
+      active_months_json,
+      habitat_tags_json,
+      image_url,
+      is_sensitive_location,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    speciesId(candidate),
+    candidate.commonName,
+    candidate.scientificName,
+    category,
+    candidate.hint,
+    JSON.stringify(candidate.seasonMonths),
+    JSON.stringify(candidate.visualKeywords),
+    null,
+    candidate.safety ? 1 : 0,
+    now,
+    now,
+  )));
+}
+
+class FreeRuleClassifier implements SpeciesClassifier {
+  async classify(input: ClassificationInput): Promise<ClassificationResult> {
+    const broadCategory = inferBroadCategory(input.mlLabels);
+    const capturedMonth = new Date(input.capturedAt).getUTCMonth() + 1;
+    const candidates = candidateProfilesForBroadCategory(broadCategory)
+      .filter((candidate) => candidate.seasonMonths.includes(capturedMonth))
+      .slice(0, 3)
+      .map((candidate) => ({
+        species_id: speciesId(candidate),
+        reason: [
+          `端末ラベルから「${broadCategory}」のなかまと見ました。`,
+          `${capturedMonth}月に見られる候補です。`,
+          candidate.hint,
+        ].join(' '),
+      }));
+
+    return {
+      broad_category: broadCategory,
+      candidates,
+      requires_human_confirmation: true,
+      needs_retake: broadCategory === 'unknown' && input.mlLabels.length === 0,
+      classifier_mode: 'free',
+      classifier_version: 'free-rule-2026-07-20',
+    };
+  }
+}
+
+class OpenAIClassifier implements SpeciesClassifier {
+  async classify(input: ClassificationInput, env: Env): Promise<ClassificationResult> {
+    const fallback = await new FreeRuleClassifier().classify(input);
+    if (!input.imageDataUrl || !env.OPENAI_API_KEY) {
+      return fallback;
+    }
+    const analysis = await analyzeSpeciesPhoto({
+      id: input.observationId,
+      category: fallback.broad_category === 'plant' || fallback.broad_category === 'tree' || fallback.broad_category === 'flower'
+        ? 'plant'
+        : fallback.broad_category === 'unknown'
+          ? 'unknown'
+          : 'insect',
+      label: input.mlLabels[0]?.text ?? fallback.broad_category,
+      confidence: input.mlLabels[0]?.confidence ?? null,
+      latitude: input.latitude,
+      longitude: input.longitude,
+      observedAt: input.capturedAt,
+      photoDataUrl: input.imageDataUrl,
+    }, input.imageDataUrl, env);
+    if (!analysis || analysis.category === 'unknown') {
+      return {
+        ...fallback,
+        classifier_mode: 'openai',
+        classifier_version: openAiClassifierVersion(env),
+      };
+    }
+    const matched = analysis.category === 'plant'
+      ? findPlantCandidate(analysis.commonName, analysis.scientificName ?? null)
+      : findInsectCandidate(analysis.commonName, analysis.scientificName ?? null);
+    if (!matched) {
+      return {
+        ...fallback,
+        classifier_mode: 'openai',
+        classifier_version: openAiClassifierVersion(env),
+      };
+    }
+    return {
+      broad_category: analysis.category === 'plant'
+        ? inferPlantBroadCategory(matched)
+        : inferInsectBroadCategory(matched),
+      candidates: [{
+        species_id: speciesId(matched),
+        reason: analysis.reason || '画像AIと神山町向け候補表から候補にしました。',
+      }],
+      requires_human_confirmation: true,
+      needs_retake: false,
+      classifier_mode: 'openai',
+      classifier_version: openAiClassifierVersion(env),
+    };
+  }
+}
+
+async function findObservationByClient(
+  db: D1Database,
+  deviceId: string,
+  clientObservationId: string,
+): Promise<ObservationRow | null> {
+  return await db.prepare(
+    'SELECT * FROM observations WHERE device_id = ? AND client_observation_id = ?',
+  ).bind(deviceId, clientObservationId).first<ObservationRow>();
+}
+
+async function putObservationImage(
+  env: Env,
+  imageKey: string,
+  imageBytes: Uint8Array,
+  contentType: 'image/jpeg' | 'image/webp',
+  metadata: Record<string, string>,
+): Promise<void> {
+  if (env.OBSERVATION_IMAGES) {
+    await env.OBSERVATION_IMAGES.put(imageKey, imageBytes, {
+      httpMetadata: { contentType },
+      customMetadata: metadata,
+    });
+    return;
+  }
+  await env.OBSERVATIONS.put(`image:${imageKey}`, bytesToBase64(imageBytes), {
+    metadata: {
+      contentType,
+      ...metadata,
+    },
+  });
+}
+
+async function deleteObservationImage(env: Env, imageKey: string): Promise<void> {
+  if (env.OBSERVATION_IMAGES) {
+    await env.OBSERVATION_IMAGES.delete(imageKey);
+    return;
+  }
+  await env.OBSERVATIONS.delete(`image:${imageKey}`);
+}
+
+async function getStoredObservationImage(
+  env: Env,
+  imageKey: string,
+): Promise<{ body: ReadableStream | Uint8Array; contentType: string } | null> {
+  if (env.OBSERVATION_IMAGES) {
+    const object = await env.OBSERVATION_IMAGES.get(imageKey);
+    if (!object) {
+      return null;
+    }
+    return {
+      body: object.body,
+      contentType: object.httpMetadata?.contentType ?? 'image/jpeg',
+    };
+  }
+  const value = await env.OBSERVATIONS.getWithMetadata(`image:${imageKey}`, 'text');
+  if (!value.value) {
+    return null;
+  }
+  const metadata = value.metadata as { contentType?: string } | null;
+  return {
+    body: base64ToBytes(value.value),
+    contentType: metadata?.contentType ?? 'image/jpeg',
+  };
+}
+
+async function insertObservation(db: D1Database, row: ObservationRow): Promise<void> {
+  await db.prepare(
+    `INSERT INTO observations (
+      id,
+      client_observation_id,
+      device_id,
+      captured_at,
+      received_at,
+      latitude,
+      longitude,
+      public_latitude,
+      public_longitude,
+      location_accuracy_m,
+      location_visibility,
+      image_key,
+      image_sha256,
+      ml_labels_json,
+      broad_category,
+      candidate_species_json,
+      confirmed_species_id,
+      status,
+      classifier_mode,
+      classifier_version,
+      quality_score,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    row.id,
+    row.client_observation_id,
+    row.device_id,
+    row.captured_at,
+    row.received_at,
+    row.latitude,
+    row.longitude,
+    row.public_latitude,
+    row.public_longitude,
+    row.location_accuracy_m,
+    row.location_visibility,
+    row.image_key,
+    row.image_sha256,
+    row.ml_labels_json,
+    row.broad_category,
+    row.candidate_species_json,
+    row.confirmed_species_id,
+    row.status,
+    row.classifier_mode,
+    row.classifier_version,
+    row.quality_score,
+    row.created_at,
+    row.updated_at,
+  ).run();
+}
+
+async function updateObservationStatus(
+  db: D1Database,
+  observationId: string,
+  status: ObservationStatus,
+): Promise<void> {
+  await db.prepare(
+    'UPDATE observations SET status = ?, updated_at = ? WHERE id = ?',
+  ).bind(status, new Date().toISOString(), observationId).run();
+}
+
+function rowToApiObservation(row: ObservationRow) {
+  return {
+    id: row.id,
+    client_observation_id: row.client_observation_id,
+    device_id: row.device_id,
+    captured_at: row.captured_at,
+    received_at: row.received_at,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    public_latitude: row.public_latitude,
+    public_longitude: row.public_longitude,
+    location_accuracy_m: row.location_accuracy_m,
+    location_visibility: row.location_visibility,
+    image_url: `/api/v1/observations/${row.id}/image`,
+    image_sha256: row.image_sha256,
+    ml_labels: safeJson(row.ml_labels_json, []),
+    broad_category: row.broad_category,
+    candidates: safeJson(row.candidate_species_json, []),
+    confirmed_species_id: row.confirmed_species_id,
+    status: row.status,
+    classifier_mode: row.classifier_mode,
+    classifier_version: row.classifier_version,
+    quality_score: row.quality_score,
+    updated_at: row.updated_at,
+  };
+}
+
+function safeJson<T>(value: string | null, fallback: T): T {
+  if (!value) {
+    return fallback;
+  }
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function sanitizeRequiredId(value: MultipartValue | null, fallback: string): string {
+  const raw = typeof value === 'string' ? value : fallback;
+  return sanitizeId(raw) ?? fallback;
+}
+
+function normalizeIsoDate(value: MultipartValue | null): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
+}
+
+function normalizeNumber(value: MultipartValue | null): number | null {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeLatitude(value: MultipartValue | null): number | null {
+  const parsed = normalizeNumber(value);
+  return parsed != null && parsed >= -90 && parsed <= 90 ? parsed : null;
+}
+
+function normalizeLongitude(value: MultipartValue | null): number | null {
+  const parsed = normalizeNumber(value);
+  return parsed != null && parsed >= -180 && parsed <= 180 ? parsed : null;
+}
+
+function buildPublicPoint(
+  latitude: number | null,
+  longitude: number | null,
+): { latitude: number | null; longitude: number | null } {
+  if (latitude == null || longitude == null) {
+    return { latitude: null, longitude: null };
+  }
+  return {
+    latitude: Math.round(latitude * 1000) / 1000,
+    longitude: Math.round(longitude * 1000) / 1000,
+  };
+}
+
+function parseMlLabels(value: MultipartValue | null): MlLabel[] {
+  if (typeof value !== 'string' || !value.trim()) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .map((item): MlLabel | null => {
+        if (!item || typeof item !== 'object') {
+          return null;
+        }
+        const text = (item as { text?: unknown }).text;
+        const confidence = (item as { confidence?: unknown }).confidence;
+        if (typeof text !== 'string' || !text.trim()) {
+          return null;
+        }
+        return {
+          text: text.trim(),
+          confidence: typeof confidence === 'number' ? clampConfidence(confidence) : null,
+        };
+      })
+      .filter((item): item is MlLabel => item != null)
+      .slice(0, 8);
+  } catch {
+    return [];
+  }
+}
+
+function isUploadedFile(value: unknown): value is File {
+  return Boolean(
+    value &&
+    typeof value !== 'string' &&
+    typeof (value as File).arrayBuffer === 'function' &&
+    typeof (value as File).size === 'number',
+  );
+}
+
+function detectImageType(
+  bytes: Uint8Array,
+  contentType: string,
+): { contentType: 'image/jpeg' | 'image/webp'; extension: 'jpg' | 'webp' } | null {
+  const isJpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (isJpeg) {
+    return { contentType: 'image/jpeg', extension: 'jpg' };
+  }
+  const isWebp = bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50;
+  if (isWebp) {
+    return { contentType: 'image/webp', extension: 'webp' };
+  }
+  if (contentType === 'image/jpeg') {
+    return { contentType: 'image/jpeg', extension: 'jpg' };
+  }
+  if (contentType === 'image/webp') {
+    return { contentType: 'image/webp', extension: 'webp' };
+  }
+  return null;
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function buildDataUrlFromBytes(bytes: Uint8Array, contentType: string): string {
+  return `data:${contentType};base64,${bytesToBase64(bytes)}`;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.slice(offset, offset + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function parseUploadLimit(env: Env): number {
+  const parsed = Number(env.MAX_UPLOAD_BYTES);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_UPLOAD_BYTES;
+}
+
+function inferBroadCategory(labels: MlLabel[]): BroadCategory {
+  const signal = labels.map((label) => label.text).join(' ').toLowerCase();
+  if (!signal.trim()) {
+    return 'unknown';
+  }
+  if (signal.includes('mushroom') || signal.includes('fungus') || signal.includes('きのこ')) {
+    return 'mushroom';
+  }
+  if (signal.includes('butterfly') || signal.includes('moth') || signal.includes('チョウ') || signal.includes('蝶')) {
+    return 'butterfly';
+  }
+  if (signal.includes('beetle') || signal.includes('カブト') || signal.includes('クワガタ') || signal.includes('甲虫')) {
+    return 'beetle';
+  }
+  if (signal.includes('insect') || signal.includes('bee') || signal.includes('wasp') || signal.includes('bug') || signal.includes('dragonfly')) {
+    return 'insect';
+  }
+  if (signal.includes('flower') || signal.includes('花')) {
+    return 'flower';
+  }
+  if (signal.includes('tree') || signal.includes('樹') || signal.includes('木')) {
+    return 'tree';
+  }
+  if (signal.includes('plant') || signal.includes('leaf') || signal.includes('grass') || signal.includes('fern') || signal.includes('herb')) {
+    return 'plant';
+  }
+  return 'unknown';
+}
+
+function candidateProfilesForBroadCategory(category: BroadCategory): readonly CandidateProfile[] {
+  if (category === 'butterfly') {
+    return INSECT_CANDIDATES.filter((candidate) => candidate.commonName.includes('チョウ') || candidate.aliases.some((alias) => alias.includes('蝶')));
+  }
+  if (category === 'beetle') {
+    return INSECT_CANDIDATES.filter((candidate) => candidate.commonName.includes('カブト') || candidate.commonName.includes('クワガタ'));
+  }
+  if (category === 'insect') {
+    return INSECT_CANDIDATES;
+  }
+  if (category === 'flower' || category === 'tree' || category === 'plant') {
+    return AI_PLANT_CANDIDATES;
+  }
+  return [];
+}
+
+function inferPlantBroadCategory(candidate: CandidateProfile): BroadCategory {
+  const text = [
+    candidate.commonName,
+    candidate.hint,
+    ...candidate.visualKeywords,
+  ].join(' ');
+  if (text.includes('花')) {
+    return 'flower';
+  }
+  if (text.includes('木') || text.includes('樹') || text.includes('低木')) {
+    return 'tree';
+  }
+  return 'plant';
+}
+
+function inferInsectBroadCategory(candidate: CandidateProfile): BroadCategory {
+  if (candidate.commonName.includes('チョウ') || candidate.aliases.some((alias) => alias.includes('蝶'))) {
+    return 'butterfly';
+  }
+  if (candidate.commonName.includes('カブト') || candidate.commonName.includes('クワガタ')) {
+    return 'beetle';
+  }
+  return 'insect';
+}
+
+function speciesId(candidate: CandidateProfile): string {
+  return candidate.scientificName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function openAiClassifierVersion(env: Env): string {
+  return `openai-${env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL}-2026-07-20`;
 }
 
 async function listObservations(
@@ -875,6 +1807,14 @@ async function analyzeSpeciesPhoto(
   const parsed = parseJsonObject(outputText);
   if (!parsed) {
     console.error(JSON.stringify({ message: 'openai_analysis_parse_failed', outputText }));
+    return null;
+  }
+  if (!validateSpeciesAnalysisSchema(parsed)) {
+    console.error(JSON.stringify({
+      message: 'openai_analysis_schema_failed',
+      schema: SPECIES_ANALYSIS_SCHEMA,
+      outputText,
+    }));
     return null;
   }
 
@@ -1167,4 +2107,25 @@ function parseJsonObject(value: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function validateSpeciesAnalysisSchema(value: Record<string, unknown>): boolean {
+  const category = value.category;
+  const commonName = value.commonName;
+  const scientificName = value.scientificName;
+  const rarity = value.rarity;
+  const confidence = value.confidence;
+  const reason = value.reason;
+  return (
+    (category === 'plant' || category === 'insect' || category === 'unknown') &&
+    typeof commonName === 'string' &&
+    commonName.trim().length > 0 &&
+    (scientificName == null || typeof scientificName === 'string') &&
+    (rarity == null || rarity === 'common' || rarity === 'uncommon' || rarity === 'rare' || rarity === 'special') &&
+    typeof confidence === 'number' &&
+    confidence >= 0 &&
+    confidence <= 1 &&
+    typeof reason === 'string' &&
+    reason.trim().length > 0
+  );
 }

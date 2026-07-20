@@ -5,7 +5,9 @@ import { SafeAreaView, StatusBar, Text, Pressable, View } from 'react-native';
 import { CapturePanel } from './components/CapturePanel';
 import { EncyclopediaPanel } from './components/EncyclopediaPanel';
 import { MapPanel } from './components/MapPanel';
+import { ReviewPanel } from './components/ReviewPanel';
 import { KAMIYAMA_CENTER, speciesCandidates } from './data/kamiyama';
+import { confirmReviewObservation, pullReviewObservations, type ReviewObservation } from './lib/reviewApi';
 import { deleteObservation, loadObservations, saveObservation } from './lib/storage';
 import { configureSyncEndpointFromUrl, pullThinkletObservations } from './lib/syncApi';
 import {
@@ -15,7 +17,7 @@ import {
 } from './lib/thinkletImport';
 import type { LatLng, Observation } from './types/domain';
 
-type Tab = 'map' | 'capture' | 'encyclopedia';
+type Tab = 'map' | 'review' | 'capture' | 'encyclopedia';
 
 const rarityLabel = {
   common: 'COMMON',
@@ -29,6 +31,8 @@ export default function App() {
   const [observations, setObservations] = useState<Observation[]>([]);
   const [currentLocation, setCurrentLocation] = useState<LatLng | null>(null);
   const [selectedObservation, setSelectedObservation] = useState<Observation | null>(null);
+  const [reviewObservations, setReviewObservations] = useState<ReviewObservation[]>([]);
+  const [isReviewLoading, setIsReviewLoading] = useState(false);
   const [statusText, setStatusText] = useState('神山町周辺の軽い範囲で探索を開始できます。');
 
   useEffect(() => {
@@ -79,6 +83,7 @@ export default function App() {
         setObservations(nextObservations);
       })
       .catch((error) => setStatusText(`図鑑の読み込み/同期に失敗しました: ${String(error)}`));
+    refreshReviewObservations();
     resolveInitialLocation({ preserveStatus: hasIncomingThinkletObservation });
   }, []);
 
@@ -137,6 +142,38 @@ export default function App() {
     setObservations((current) => current.filter((item) => item.id !== id));
     if (selectedObservation?.id === id) {
       setSelectedObservation(null);
+    }
+  }
+
+  async function refreshReviewObservations() {
+    setIsReviewLoading(true);
+    try {
+      const reviews = await pullReviewObservations();
+      setReviewObservations(reviews);
+      if (reviews.length > 0) {
+        setStatusText(`${reviews.length}この候補カードが届いています。`);
+      }
+    } catch (error) {
+      setStatusText(`候補カードの読み込みに失敗しました: ${String(error)}`);
+    } finally {
+      setIsReviewLoading(false);
+    }
+  }
+
+  async function handleConfirmReview(observation: ReviewObservation, speciesId: string) {
+    try {
+      const confirmed = await confirmReviewObservation(observation, speciesId);
+      await saveObservation(confirmed);
+      setObservations((current) => (
+        current.some((item) => item.id === confirmed.id) ? current : [confirmed, ...current]
+      ));
+      setReviewObservations((current) => current.filter((item) => item.id !== observation.id));
+      setSelectedObservation(confirmed);
+      setCurrentLocation({ latitude: confirmed.latitude, longitude: confirmed.longitude });
+      setActiveTab('map');
+      setStatusText(`${confirmed.customName} を図鑑に登録しました。`);
+    } catch (error) {
+      setStatusText(`登録に失敗しました: ${String(error)}`);
     }
   }
 
@@ -216,6 +253,15 @@ export default function App() {
             />
           ) : null}
 
+          {activeTab === 'review' ? (
+            <ReviewPanel
+              reviews={reviewObservations}
+              isLoading={isReviewLoading}
+              onRefresh={refreshReviewObservations}
+              onConfirm={handleConfirmReview}
+            />
+          ) : null}
+
           {activeTab === 'encyclopedia' ? (
             <EncyclopediaPanel
               observations={observations}
@@ -230,6 +276,12 @@ export default function App() {
             icon="MAP"
             active={activeTab === 'map'}
             onPress={() => setActiveTab('map')}
+          />
+          <TabButton
+            label="候補"
+            icon={reviewObservations.length > 0 ? String(reviewObservations.length) : 'AI'}
+            active={activeTab === 'review'}
+            onPress={() => setActiveTab('review')}
           />
           <TabButton
             label="撮影"

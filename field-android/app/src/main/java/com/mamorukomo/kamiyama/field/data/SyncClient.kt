@@ -19,6 +19,36 @@ class SyncClient(private val endpoint: String) {
             return SyncResult(emptyList(), sinceMillis)
         }
         return withContext(Dispatchers.IO) {
+            runCatching { pullV1Observations(sinceMillis) }
+                .getOrElse { pullLegacyObservations(sinceMillis) }
+        }
+    }
+
+    private fun pullV1Observations(sinceMillis: Long): SyncResult {
+        val query = if (sinceMillis > 0L) "?since=$sinceMillis" else ""
+        val connection = (URL("${endpoint.trimEnd('/')}/api/v1/observations$query").openConnection() as HttpURLConnection)
+            .apply {
+                requestMethod = "GET"
+                connectTimeout = 10000
+                readTimeout = 15000
+            }
+        try {
+            val status = connection.responseCode
+            if (status == 404 || status == 503) {
+                throw IllegalStateException("v1 unavailable")
+            }
+            if (status !in 200..299) {
+                val error = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                throw IllegalStateException("HTTP $status $error")
+            }
+            val raw = connection.inputStream.bufferedReader().use { it.readText() }
+            return parseV1Observations(raw)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun pullLegacyObservations(sinceMillis: Long): SyncResult {
             val query = if (sinceMillis > 0L) "?since=$sinceMillis" else ""
             val connection = (URL("${endpoint.trimEnd('/')}/observations$query").openConnection() as HttpURLConnection)
                 .apply {
@@ -37,7 +67,61 @@ class SyncClient(private val endpoint: String) {
             } finally {
                 connection.disconnect()
             }
+    }
+
+    private fun parseV1Observations(raw: String): SyncResult {
+        val root = JSONObject(raw)
+        val serverTime = root.optLong("serverTime", System.currentTimeMillis())
+        val observations = root.optJSONArray("observations") ?: return SyncResult(emptyList(), serverTime)
+        val confirmed = buildList {
+            for (index in 0 until observations.length()) {
+                val item = observations.optJSONObject(index) ?: continue
+                item.toV1ObservationOrNull()?.let(::add)
+            }
         }
+        return SyncResult(confirmed, serverTime)
+    }
+
+    private fun JSONObject.toV1ObservationOrNull(): Observation? {
+        if (optText("status") != "confirmed") {
+            return null
+        }
+        val confirmedSpeciesId = optText("confirmed_species_id") ?: return null
+        val candidate = SpeciesCandidates.firstOrNull { it.id == confirmedSpeciesId } ?: return null
+        val point = LatLng(
+            latitude = optDoubleOrNull("latitude") ?: KamiyamaCenter.latitude,
+            longitude = optDoubleOrNull("longitude") ?: KamiyamaCenter.longitude,
+        )
+        val observedAt = normalizeObservedAt(optText("captured_at"))
+        val imageUrl = optText("image_url")?.let { imagePath ->
+            if (imagePath.startsWith("/")) "${endpoint.trimEnd('/')}$imagePath" else imagePath
+        } ?: buildPhotoPlaceholder(candidate.commonName, candidate.category)
+        val reason = optJSONArray("candidates")
+            ?.let { candidates ->
+                (0 until candidates.length())
+                    .mapNotNull { index -> candidates.optJSONObject(index) }
+                    .firstOrNull { it.optString("species_id") == confirmedSpeciesId }
+                    ?.optText("reason")
+            }
+        val note = buildList {
+            add("THINKLETから届いた写真を候補カードで確認済みです。")
+            reason?.let { add("候補理由: $it") }
+            optText("image_sha256")?.let { add("写真SHA-256: ${it.take(12)}...") }
+        }.joinToString("\n")
+        return Observation(
+            id = optText("id") ?: return null,
+            photoUri = imageUrl,
+            category = candidate.category,
+            candidateId = candidate.id,
+            customName = candidate.commonName,
+            note = note,
+            latitude = point.latitude,
+            longitude = point.longitude,
+            accuracy = optDoubleOrNull("location_accuracy_m")?.toFloat(),
+            observedAtMillis = observedAt,
+            environment = describeEnvironment(point),
+            rarity = candidate.rarity,
+        )
     }
 
     private fun parseObservations(raw: String): SyncResult {

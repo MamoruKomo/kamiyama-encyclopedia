@@ -8,12 +8,21 @@
     "head_sampling_rate": 1
   },
   "vars": {
-    "ALLOWED_ORIGINS": "https://mamorukomo.github.io,http://localhost:8081"
+    "ALLOWED_ORIGINS": "https://mamorukomo.github.io,http://localhost:8081",
+    "AI_MODE": "free",
+    "MAX_UPLOAD_BYTES": "4194304"
   },
   "kv_namespaces": [
     {
       "binding": "OBSERVATIONS",
       "id": "d24abefbd4de471ba98135fc99b6173d"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "OBSERVATION_DB",
+      "database_name": "kamiyama-encyclopedia-observations",
+      "database_id": "ae3dc7de-2eda-4251-8587-7456a5aaaa3e"
     }
   ]
 }

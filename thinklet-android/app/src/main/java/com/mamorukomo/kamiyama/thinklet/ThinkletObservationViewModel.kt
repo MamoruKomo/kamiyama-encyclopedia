@@ -15,6 +15,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import android.view.KeyEvent
@@ -41,6 +42,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -49,20 +51,25 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 data class ThinkletObservationPayload(
     val id: String,
+    val clientObservationId: String,
+    val deviceId: String,
     val category: String,
     val label: String,
     val confidence: Float?,
+    val mlLabels: List<DeviceImageLabel> = emptyList(),
     val latitude: Double?,
     val longitude: Double?,
     val accuracyMeters: Float?,
     val observedAt: Long,
     val photoUri: String?,
+    val photoFilePath: String? = null,
     val photoBase64: String? = null,
     val photoMimeType: String? = null,
     val aiLabel: String? = null,
@@ -70,15 +77,26 @@ data class ThinkletObservationPayload(
 ) {
     fun toJson(includePhoto: Boolean = false): JSONObject = JSONObject().apply {
         put("id", id)
+        put("clientObservationId", clientObservationId)
+        put("deviceId", deviceId)
         put("source", "THINKLET")
         put("category", category)
         put("label", label)
         put("confidence", confidence)
+        put("mlLabels", JSONArray().apply {
+            mlLabels.forEach { label ->
+                put(JSONObject().apply {
+                    put("text", label.text)
+                    put("confidence", label.confidence)
+                })
+            }
+        })
         put("latitude", latitude)
         put("longitude", longitude)
         put("accuracyMeters", accuracyMeters)
         put("observedAt", observedAt)
         put("photoUri", photoUri)
+        put("photoFilePath", photoFilePath)
         put("aiLabel", aiLabel)
         put("aiConfidence", aiConfidence)
         if (includePhoto) {
@@ -87,6 +105,11 @@ data class ThinkletObservationPayload(
         }
     }
 }
+
+data class DeviceImageLabel(
+    val text: String,
+    val confidence: Float?,
+)
 
 data class ThinkletObservationState(
     val status: String = "カメラ準備中",
@@ -100,6 +123,7 @@ private data class NatureGuess(
     val label: String,
     val category: String,
     val confidence: Float?,
+    val labels: List<DeviceImageLabel>,
 )
 
 class ThinkletObservationViewModel : ViewModel() {
@@ -233,10 +257,12 @@ class ThinkletObservationViewModel : ViewModel() {
                     )
                     playSuccessTone()
                     Toast.makeText(context, "AI同期しました", Toast.LENGTH_SHORT).show()
+                    flushPendingObservations(context)
                 }
                 .onFailure { error ->
+                    enqueuePendingObservation(context, payload)
                     _state.value = _state.value.copy(
-                        status = "同期送信に失敗: ${error.message}",
+                        status = "同期送信に失敗。あとで自動再送します: ${error.message}",
                         isSending = false,
                     )
                     Log.e(TAG, "sync_post_failed id=${payload.id}", error)
@@ -279,16 +305,21 @@ class ThinkletObservationViewModel : ViewModel() {
             "location_read lat=${location?.latitude} lon=${location?.longitude} accuracy=${location?.takeIf { it.hasAccuracy() }?.accuracy}"
         )
         val observedAt = System.currentTimeMillis()
+        val clientObservationId = UUID.randomUUID().toString()
         return ThinkletObservationPayload(
-            id = "thinklet-$observedAt",
+            id = "thinklet-$clientObservationId",
+            clientObservationId = clientObservationId,
+            deviceId = readDeviceId(context),
             category = guess.category,
             label = guess.label,
             confidence = guess.confidence,
+            mlLabels = guess.labels,
             latitude = location?.latitude,
             longitude = location?.longitude,
             accuracyMeters = location?.takeIf { it.hasAccuracy() }?.accuracy,
             observedAt = observedAt,
             photoUri = Uri.fromFile(photoFile).toString(),
+            photoFilePath = photoFile.absolutePath,
             photoBase64 = createAnalysisImageBase64(photoFile),
             photoMimeType = "image/jpeg",
         )
@@ -320,7 +351,7 @@ class ThinkletObservationViewModel : ViewModel() {
         }
     }
 
-    private suspend fun classifyImage(context: Context, file: File): ImageLabel? {
+    private suspend fun classifyImage(context: Context, file: File): List<ImageLabel> {
         return suspendCancellableCoroutine { continuation ->
             val image = InputImage.fromFilePath(context, Uri.fromFile(file))
             val labeler = ImageLabeling.getClient(
@@ -329,25 +360,31 @@ class ThinkletObservationViewModel : ViewModel() {
                     .build()
             )
             labeler.process(image)
-                .addOnSuccessListener { labels -> continuation.resume(labels.maxByOrNull { it.confidence }) }
+                .addOnSuccessListener { labels -> continuation.resume(labels.sortedByDescending { it.confidence }) }
                 .addOnFailureListener { error -> continuation.resumeWithException(error) }
         }
     }
 
     private suspend fun classifyNature(context: Context, file: File): NatureGuess {
-        val label = classifyImage(context, file)
-        val category = inferCategory(label?.text)
+        val labels = classifyImage(context, file)
+        val bestLabel = labels.firstOrNull()
+        val deviceLabels = labels.map { label ->
+            DeviceImageLabel(text = label.text, confidence = label.confidence)
+        }
+        val category = inferCategory(bestLabel?.text)
         return if (category == "unknown") {
             NatureGuess(
                 label = "未同定",
                 category = "unknown",
-                confidence = label?.confidence,
+                confidence = bestLabel?.confidence,
+                labels = deviceLabels,
             )
         } else {
             NatureGuess(
-                label = label?.text ?: "未同定",
+                label = bestLabel?.text ?: "未同定",
                 category = category,
-                confidence = label?.confidence,
+                confidence = bestLabel?.confidence,
+                labels = deviceLabels,
             )
         }
     }
@@ -533,6 +570,55 @@ class ThinkletObservationViewModel : ViewModel() {
         }
     }
 
+    private fun readDeviceId(context: Context): String {
+        val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: "unknown"
+        return "thinklet-$androidId"
+    }
+
+    private fun enqueuePendingObservation(context: Context, payload: ThinkletObservationPayload) {
+        val prefs = context.getSharedPreferences(PENDING_PREFS_NAME, Context.MODE_PRIVATE)
+        val current = prefs.getString(PENDING_QUEUE_KEY, "[]").orEmpty()
+        val queue = runCatching { JSONArray(current) }.getOrDefault(JSONArray())
+        val alreadyQueued = (0 until queue.length()).any { index ->
+            queue.optJSONObject(index)?.optString("clientObservationId") == payload.clientObservationId
+        }
+        if (!alreadyQueued) {
+            queue.put(payload.toJson(includePhoto = true))
+            prefs.edit().putString(PENDING_QUEUE_KEY, queue.toString()).apply()
+        }
+        Log.i(TAG, "pending_enqueue size=${queue.length()} id=${payload.id}")
+    }
+
+    private fun flushPendingObservations(context: Context) {
+        viewModelScope.launch {
+            val endpoint = BuildConfig.SYNC_API_URL.trim().trimEnd('/')
+            if (endpoint.isBlank()) {
+                return@launch
+            }
+            val prefs = context.getSharedPreferences(PENDING_PREFS_NAME, Context.MODE_PRIVATE)
+            val queue = runCatching {
+                JSONArray(prefs.getString(PENDING_QUEUE_KEY, "[]").orEmpty())
+            }.getOrDefault(JSONArray())
+            if (queue.length() == 0) {
+                return@launch
+            }
+            val remaining = JSONArray()
+            for (index in 0 until queue.length()) {
+                val item = queue.optJSONObject(index) ?: continue
+                val payload = item.toPayloadOrNull() ?: continue
+                val sent = runCatching { postObservation(endpoint, payload) }.isSuccess
+                if (!sent) {
+                    remaining.put(item)
+                }
+            }
+            prefs.edit().putString(PENDING_QUEUE_KEY, remaining.toString()).apply()
+            Log.i(TAG, "pending_flush before=${queue.length()} after=${remaining.length()}")
+        }
+    }
+
     override fun onCleared() {
         toneGenerator?.release()
         super.onCleared()
@@ -546,6 +632,8 @@ class ThinkletObservationViewModel : ViewModel() {
         const val TONE_VOLUME = 85
         const val TONE_SHORT_MS = 120
         const val TONE_LONG_MS = 260
+        const val PENDING_PREFS_NAME = "kamiyama-thinklet-pending"
+        const val PENDING_QUEUE_KEY = "pending_observations"
     }
 }
 
@@ -557,7 +645,85 @@ private data class ServerObservationResult(
 
 private suspend fun postObservation(endpoint: String, payload: ThinkletObservationPayload): ServerObservationResult {
     return withContext(Dispatchers.IO) {
-        val connection = (URL("$endpoint/observations").openConnection() as HttpURLConnection).apply {
+        val v1Result = runCatching { postObservationV1(endpoint, payload) }
+        if (v1Result.isSuccess) {
+            return@withContext v1Result.getOrThrow()
+        }
+        Log.w("KamiyamaThinklet", "v1_upload_failed_fallback_legacy error=${v1Result.exceptionOrNull()?.message}")
+        postObservationLegacy(endpoint, payload)
+    }
+}
+
+private fun postObservationV1(endpoint: String, payload: ThinkletObservationPayload): ServerObservationResult {
+    val boundary = "Kamiyama${UUID.randomUUID()}"
+    val connection = (URL("$endpoint/api/v1/observations").openConnection() as HttpURLConnection).apply {
+        requestMethod = "POST"
+        connectTimeout = 10000
+        readTimeout = 45000
+        doOutput = true
+        setRequestProperty("content-type", "multipart/form-data; boundary=$boundary")
+        if (BuildConfig.SYNC_WRITE_TOKEN.isNotBlank()) {
+            setRequestProperty("authorization", "Bearer ${BuildConfig.SYNC_WRITE_TOKEN}")
+        }
+    }
+
+    try {
+        connection.outputStream.use { output ->
+            fun writeText(name: String, value: String?) {
+                if (value == null) {
+                    return
+                }
+                output.write("--$boundary\r\n".toByteArray())
+                output.write("Content-Disposition: form-data; name=\"$name\"\r\n\r\n".toByteArray())
+                output.write(value.toByteArray(Charsets.UTF_8))
+                output.write("\r\n".toByteArray())
+            }
+
+            writeText("client_observation_id", payload.clientObservationId)
+            writeText("device_id", payload.deviceId)
+            writeText("captured_at", Date(payload.observedAt).toInstant().toString())
+            writeText("latitude", payload.latitude?.toString())
+            writeText("longitude", payload.longitude?.toString())
+            writeText("location_accuracy_m", payload.accuracyMeters?.toString())
+            writeText("quality_score", payload.confidence?.coerceIn(0f, 1f)?.toString())
+            writeText("app_version", BuildConfig.VERSION_NAME)
+            writeText("ml_labels_json", JSONArray().apply {
+                payload.mlLabels.forEach { label ->
+                    put(JSONObject().apply {
+                        put("text", label.text)
+                        put("confidence", label.confidence)
+                    })
+                }
+            }.toString())
+
+            val imageBytes = payload.photoBase64
+                ?.let { Base64.decode(it, Base64.NO_WRAP) }
+                ?: payload.photoFilePath
+                    ?.let(::File)
+                    ?.takeIf { it.exists() }
+                    ?.readBytes()
+                ?: throw IllegalStateException("送信する写真が見つかりません")
+            val mimeType = payload.photoMimeType ?: "image/jpeg"
+            output.write("--$boundary\r\n".toByteArray())
+            output.write("Content-Disposition: form-data; name=\"image\"; filename=\"${payload.clientObservationId}.jpg\"\r\n".toByteArray())
+            output.write("Content-Type: $mimeType\r\n\r\n".toByteArray())
+            output.write(imageBytes)
+            output.write("\r\n--$boundary--\r\n".toByteArray())
+        }
+        val status = connection.responseCode
+        if (status !in 200..299) {
+            val error = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            throw IllegalStateException("HTTP $status $error")
+        }
+        val response = connection.inputStream.bufferedReader().use { it.readText() }
+        return parseServerObservationResult(response)
+    } finally {
+        connection.disconnect()
+    }
+}
+
+private fun postObservationLegacy(endpoint: String, payload: ThinkletObservationPayload): ServerObservationResult {
+    val connection = (URL("$endpoint/observations").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 10000
             readTimeout = 45000
@@ -568,19 +734,18 @@ private suspend fun postObservation(endpoint: String, payload: ThinkletObservati
             }
         }
 
-        try {
-            val body = payload.toJson(includePhoto = true).toString().toByteArray(Charsets.UTF_8)
-            connection.outputStream.use { output -> output.write(body) }
-            val status = connection.responseCode
-            if (status !in 200..299) {
-                val error = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                throw IllegalStateException("HTTP $status $error")
-            }
-            val response = connection.inputStream.bufferedReader().use { it.readText() }
-            parseServerObservationResult(response)
-        } finally {
-            connection.disconnect()
+    try {
+        val body = payload.toJson(includePhoto = true).toString().toByteArray(Charsets.UTF_8)
+        connection.outputStream.use { output -> output.write(body) }
+        val status = connection.responseCode
+        if (status !in 200..299) {
+            val error = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            throw IllegalStateException("HTTP $status $error")
         }
+        val response = connection.inputStream.bufferedReader().use { it.readText() }
+        return parseServerObservationResult(response)
+    } finally {
+        connection.disconnect()
     }
 }
 
@@ -598,4 +763,43 @@ private fun parseServerObservationResult(raw: String): ServerObservationResult {
         else -> null
     }
     return ServerObservationResult(label, category, confidence)
+}
+
+private fun JSONObject.toPayloadOrNull(): ThinkletObservationPayload? {
+    val id = optString("id").takeIf { it.isNotBlank() } ?: return null
+    val clientObservationId = optString("clientObservationId").takeIf { it.isNotBlank() } ?: id
+    val deviceId = optString("deviceId").takeIf { it.isNotBlank() } ?: "thinklet-unknown"
+    val labels = optJSONArray("mlLabels")?.let { array ->
+        buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val text = item.optString("text").takeIf { it.isNotBlank() } ?: continue
+                val confidence = if (item.has("confidence") && !item.isNull("confidence")) {
+                    item.optDouble("confidence").toFloat()
+                } else {
+                    null
+                }
+                add(DeviceImageLabel(text = text, confidence = confidence))
+            }
+        }
+    } ?: emptyList()
+    return ThinkletObservationPayload(
+        id = id,
+        clientObservationId = clientObservationId,
+        deviceId = deviceId,
+        category = optString("category", "unknown"),
+        label = optString("label", "未同定"),
+        confidence = if (has("confidence") && !isNull("confidence")) optDouble("confidence").toFloat() else null,
+        mlLabels = labels,
+        latitude = if (has("latitude") && !isNull("latitude")) optDouble("latitude") else null,
+        longitude = if (has("longitude") && !isNull("longitude")) optDouble("longitude") else null,
+        accuracyMeters = if (has("accuracyMeters") && !isNull("accuracyMeters")) optDouble("accuracyMeters").toFloat() else null,
+        observedAt = optLong("observedAt", System.currentTimeMillis()),
+        photoUri = optString("photoUri").takeIf { it.isNotBlank() },
+        photoFilePath = optString("photoFilePath").takeIf { it.isNotBlank() },
+        photoBase64 = optString("photoBase64").takeIf { it.isNotBlank() },
+        photoMimeType = optString("photoMimeType").takeIf { it.isNotBlank() },
+        aiLabel = optString("aiLabel").takeIf { it.isNotBlank() },
+        aiConfidence = if (has("aiConfidence") && !isNull("aiConfidence")) optDouble("aiConfidence").toFloat() else null,
+    )
 }

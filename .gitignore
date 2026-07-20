@@ -3,6 +3,8 @@ dist/
 .expo/
 .env
 .DS_Store
+.idea/
+.vscode/
 npm-debug.log*
 thinklet-android/local.properties
 thinklet-android/.gradle/
