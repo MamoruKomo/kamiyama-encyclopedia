@@ -2,11 +2,13 @@
   "name": "kamiyama-encyclopedia-sync-worker",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "migrate:dry-run": "node scripts/kv-to-d1-r2-dry-run.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test tests/*.test.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260615.0",

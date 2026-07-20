@@ -404,6 +404,9 @@ The following migration pieces have now been added:
 - Phase 10 public APIs under `/api/v1/public/*`
 - Phase 10 review APIs under `/api/v1/review/*`
 - Phase 10 device sync status API: `GET /api/v1/devices/me/sync-status`
+- Phase 11 admin metrics API: `GET /api/v1/admin/metrics`
+- Phase 11 structured Worker logs for upload, duplicate, rejection, classification, confirmation, and request failures.
+- Phase 12 Worker test suite using Node's built-in test runner and mocked D1/KV.
 - R2 image storage for new v1 uploads when R2 is enabled; current production uses KV image fallback because the Cloudflare account has R2 disabled.
 - SHA-256 calculation and D1 persistence.
 - Duplicate `(device_id, client_observation_id)` handling.
@@ -429,6 +432,9 @@ Verification completed:
 - `sync-worker`: Phase 10 production smoke uploaded a beetle-labelled test JPEG, saw `candidate_ready` with `trypoxylus-dichotomus` and `prosopocoilus-inclinatus`, confirmed `trypoxylus-dichotomus`, verified public detail/map/image routes, then rejected the smoke observation to remove it from public results.
 - `sync-worker`: Public detail smoke returned `public_latitude` / `public_longitude` only and did not expose `device_id`, exact `latitude`, or exact `longitude`.
 - `sync-worker`: `GET /api/v1/devices/me/sync-status` returns 401 without a bearer token and returns device counters with a valid token.
+- `sync-worker`: 2026-07-21 local `npm test` passes. Tests cover unauthenticated upload, invalid image bytes, free beetle classification, candidate confirmation, duplicate upload, public location redaction, and admin metrics auth/counters.
+- `sync-worker`: Phase 11/12 Worker deploy succeeded on 2026-07-21. Deployed Worker version: `a71e4681-e648-4d24-8f00-3bde464fc1be`.
+- `sync-worker`: Production `GET /api/v1/admin/metrics` returns 401 without a bearer token and returns status/device counters with a valid token.
 - Android SDK: `npm run android:doctor` confirms both Android projects point to `/Users/mamoru/Library/Android/sdk`, but that path is missing `platforms` or `platform-tools`.
 - Web/PWA: `npm run typecheck`
 - Web/PWA: `npm run build`
@@ -439,6 +445,7 @@ Verification not completed:
 - field-android build: same SDK availability issue applies.
 - Real Cloudflare R2 deploy: blocked until R2 is enabled in the Cloudflare Dashboard.
 - Real THINKLET device capture/upload test.
+- Full Phase 12 Android/Web test automation is not implemented yet.
 
 ## Remaining Gaps Against Target Architecture
 
@@ -449,3 +456,5 @@ Verification not completed:
 5. Old KV observation records have not been migrated yet; only the dry-run helper exists.
 6. Classification runs in `ctx.waitUntil`, not a durable queue. A production retry queue would be safer for long-running AI work.
 7. Android builds and real THINKLET testing are blocked until the local Android SDK path is fixed.
+8. Phase 11 admin metrics do not yet persist duplicate-send counts as an aggregate.
+9. Phase 12 currently covers Worker API behavior first; THINKLET button/queue tests and Web UI tests still need dedicated harnesses.

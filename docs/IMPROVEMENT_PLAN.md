@@ -443,6 +443,120 @@ Exit criteria:
 - Review API can confirm a candidate without placing unconfirmed observations in the public dex.
 - Exact location is not exposed through public API.
 
+## Phase 11: Logs And Operations
+
+Status: partially implemented.
+
+Goal:
+
+Make the MVP observable without logging secrets, image bodies, or exact locations.
+
+Implemented:
+
+- Worker emits structured JSON logs for:
+  - upload accepted
+  - duplicate upload
+  - upload rejected
+  - classification completed
+  - classification failed
+  - observation confirmed
+  - observation rejected
+  - unhandled request failure
+- Log fields are limited to:
+  - `request_id`
+  - `observation_id`
+  - `client_observation_id`
+  - `device_id`
+  - `status`
+  - `classifier_mode`
+  - `duration_ms`
+  - `error_code`
+- Logs intentionally do not include:
+  - API keys
+  - Bearer tokens
+  - image bodies
+  - exact latitude/longitude
+  - OpenAI image payloads
+- Added authenticated operations API:
+  - `GET /api/v1/admin/metrics`
+- Metrics currently include:
+  - status counts
+  - confirmed count
+  - rejected count
+  - needs review count
+  - failed count
+  - needs retake count
+  - device totals
+  - device last communication time
+
+Remaining:
+
+- `duration_ms` is currently logged but still coarse for async classification; add real measured durations around each route and classification stage.
+- Duplicate send count is detected in logs but not persisted as an aggregate counter.
+- No dashboard UI exists yet.
+- No alerting exists yet.
+
+Verification:
+
+- Worker typecheck.
+- Worker tests.
+- Production smoke after deploy.
+
+## Phase 12: Tests
+
+Status: partially implemented.
+
+Goal:
+
+Add repeatable tests for the highest-risk Worker behavior first, then expand to THINKLET and Web.
+
+Implemented Worker tests:
+
+- Unauthenticated upload returns 401.
+- Invalid image bytes are rejected even when `Content-Type` says JPEG.
+- Valid upload writes one D1 observation and image object.
+- Free mode classifies a beetle-labelled observation into candidate state, not confirmed state.
+- Candidate confirmation moves the observation to confirmed.
+- Duplicate `(device_id, client_observation_id)` returns `duplicate: true`.
+- Public detail API returns rounded public coordinates only.
+- Public detail API does not expose `device_id`, exact `latitude`, or exact `longitude`.
+- Admin metrics requires auth and returns status/device counters.
+
+Command:
+
+```bash
+cd sync-worker
+npm test
+```
+
+Remaining Worker tests:
+
+- Oversized image rejection.
+- Missing latitude/longitude.
+- Simulated D1 write failure and image cleanup.
+- Simulated R2 write failure.
+- `AI_MODE=openai` with mocked OpenAI response.
+- OpenAI failure fallback.
+- Public list/map filters with multiple observations.
+
+Remaining THINKLET tests:
+
+- Button one-shot capture.
+- Rapid press suppression.
+- Location missing but photo saved.
+- ML Kit failure still saves/sends.
+- Offline queue persistence.
+- Retry uses the same `client_observation_id`.
+- Local file is retained until successful upload.
+
+Remaining Web tests:
+
+- Confirmed-only dex rendering.
+- Review inbox rendering.
+- Candidate selection flow.
+- Public map uses public coordinates.
+- Smartphone-width layout.
+
 ## Later Cleanup And Deprecation
 
 Status: deferred.

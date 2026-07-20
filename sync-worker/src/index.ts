@@ -719,6 +719,10 @@ export default {
         return await getDeviceSyncStatus(request, url, env, corsHeaders);
       }
 
+      if (url.pathname === '/api/v1/admin/metrics' && request.method === 'GET') {
+        return await getAdminMetrics(request, env, corsHeaders);
+      }
+
       if (url.pathname === '/api/v1/public/observations' && request.method === 'GET') {
         return await listPublicObservations(url, env, corsHeaders);
       }
@@ -775,7 +779,13 @@ export default {
 
       return json({ error: 'not_found' }, corsHeaders, 404);
     } catch (error) {
-      console.error(JSON.stringify({ message: 'request_failed', error: String(error) }));
+      logEvent('error', {
+        event: 'request_failed',
+        request_id: requestIdFrom(request),
+        error_code: 'internal_error',
+        duration_ms: 0,
+        error: String(error),
+      });
       return json({ error: 'internal_error' }, corsHeaders, 500);
     }
   },
@@ -851,6 +861,16 @@ async function createObservationV1(
   );
   const duplicate = await findObservationByClient(env.OBSERVATION_DB, deviceId, clientObservationId);
   if (duplicate) {
+    logEvent('info', {
+      event: 'observation_duplicate',
+      request_id: requestIdFrom(request),
+      observation_id: duplicate.id,
+      client_observation_id: duplicate.client_observation_id,
+      device_id: duplicate.device_id,
+      status: duplicate.status,
+      classifier_mode: duplicate.classifier_mode,
+      duration_ms: 0,
+    });
     return json({
       observation_id: duplicate.id,
       client_observation_id: duplicate.client_observation_id,
@@ -862,15 +882,18 @@ async function createObservationV1(
 
   const maxBytes = parseUploadLimit(env);
   if (image.size <= 0) {
+    logUploadRejected(request, deviceId, clientObservationId, 'empty_image');
     return json({ error: 'empty_image' }, corsHeaders, 400);
   }
   if (image.size > maxBytes) {
+    logUploadRejected(request, deviceId, clientObservationId, 'image_too_large');
     return json({ error: 'image_too_large', max_bytes: maxBytes }, corsHeaders, 413);
   }
 
   const imageBytes = new Uint8Array(await image.arrayBuffer());
   const imageType = detectImageType(imageBytes, image.type);
   if (!imageType) {
+    logUploadRejected(request, deviceId, clientObservationId, 'unsupported_image_type');
     return json({ error: 'unsupported_image_type' }, corsHeaders, 415);
   }
 
@@ -923,6 +946,16 @@ async function createObservationV1(
     await deleteObservationImage(env, imageKey);
     const existing = await findObservationByClient(env.OBSERVATION_DB, deviceId, clientObservationId);
     if (existing) {
+      logEvent('info', {
+        event: 'observation_duplicate_after_insert_conflict',
+        request_id: requestIdFrom(request),
+        observation_id: existing.id,
+        client_observation_id: existing.client_observation_id,
+        device_id: existing.device_id,
+        status: existing.status,
+        classifier_mode: existing.classifier_mode,
+        duration_ms: 0,
+      });
       return json({
         observation_id: existing.id,
         client_observation_id: existing.client_observation_id,
@@ -933,6 +966,17 @@ async function createObservationV1(
     }
     throw error;
   }
+
+  logEvent('info', {
+    event: 'observation_uploaded',
+    request_id: requestIdFrom(request),
+    observation_id: observationId,
+    client_observation_id: clientObservationId,
+    device_id: deviceId,
+    status: 'uploaded',
+    classifier_mode: getAiMode(env),
+    duration_ms: 0,
+  });
 
   ctx.waitUntil(classifyPersistedObservation(env, {
     observationId,
@@ -1056,11 +1100,31 @@ async function updateObservationReview(
            updated_at = ?
        WHERE id = ?`,
     ).bind(speciesIdValue, now, observationId).run();
+    logEvent('info', {
+      event: 'observation_confirmed',
+      request_id: requestIdFrom(request),
+      observation_id: observationId,
+      client_observation_id: row.client_observation_id,
+      device_id: row.device_id,
+      status: 'confirmed',
+      classifier_mode: row.classifier_mode,
+      duration_ms: 0,
+    });
     return json({ ok: true, status: 'confirmed', observation_id: observationId }, corsHeaders);
   }
 
   if (body.action === 'reject') {
     await updateObservationStatus(env.OBSERVATION_DB, observationId, 'rejected');
+    logEvent('info', {
+      event: 'observation_rejected',
+      request_id: requestIdFrom(request),
+      observation_id: observationId,
+      client_observation_id: row.client_observation_id,
+      device_id: row.device_id,
+      status: 'rejected',
+      classifier_mode: row.classifier_mode,
+      duration_ms: 0,
+    });
     return json({ ok: true, status: 'rejected', observation_id: observationId }, corsHeaders);
   }
 
@@ -1192,6 +1256,55 @@ async function getDeviceSyncStatus(
     review_count: row?.review_count ?? 0,
     confirmed_count: row?.confirmed_count ?? 0,
     failed_count: row?.failed_count ?? 0,
+    serverTime: Date.now(),
+  }, corsHeaders);
+}
+
+async function getAdminMetrics(
+  request: Request,
+  env: Env,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (!(await isAuthorized(request, env))) {
+    return json({ error: 'unauthorized' }, corsHeaders, 401);
+  }
+  if (!env.OBSERVATION_DB) {
+    return json({ error: 'storage_not_configured' }, corsHeaders, 503);
+  }
+  const statusRows = await env.OBSERVATION_DB.prepare(
+    `SELECT status, COUNT(*) AS count
+     FROM observations
+     GROUP BY status
+     ORDER BY status ASC`,
+  ).all<{ status: ObservationStatus; count: number }>();
+  const deviceRows = await env.OBSERVATION_DB.prepare(
+    `SELECT
+       device_id,
+       COUNT(*) AS total,
+       MAX(received_at) AS last_received_at
+     FROM observations
+     GROUP BY device_id
+     ORDER BY last_received_at DESC
+     LIMIT 100`,
+  ).all<{ device_id: string; total: number; last_received_at: string | null }>();
+  const statusCounts = Object.fromEntries(
+    (statusRows.results ?? []).map((row) => [row.status, row.count]),
+  );
+  return json({
+    uploaded_count: statusCounts.uploaded ?? 0,
+    classifying_count: statusCounts.classifying ?? 0,
+    candidate_ready_count: statusCounts.candidate_ready ?? 0,
+    needs_review_count: statusCounts.needs_review ?? 0,
+    classification_failed_count: statusCounts.classification_failed ?? 0,
+    needs_retake_count: statusCounts.needs_retake ?? 0,
+    confirmed_count: statusCounts.confirmed ?? 0,
+    rejected_count: statusCounts.rejected ?? 0,
+    duplicate_send_count: null,
+    devices: (deviceRows.results ?? []).map((row) => ({
+      device_id: row.device_id,
+      total: row.total,
+      last_received_at: row.last_received_at,
+    })),
     serverTime: Date.now(),
   }, corsHeaders);
 }
@@ -1415,12 +1528,30 @@ async function classifyPersistedObservation(
       new Date().toISOString(),
       input.observationId,
     ).run();
+    logEvent('info', {
+      event: 'observation_classified',
+      request_id: input.observationId,
+      observation_id: input.observationId,
+      client_observation_id: input.clientObservationId,
+      device_id: input.deviceId,
+      status: nextStatus,
+      classifier_mode: result.classifier_mode,
+      duration_ms: 0,
+    });
   } catch (error) {
-    console.error(JSON.stringify({
-      message: 'classification_failed',
+    logEvent('error', {
+      event: 'classification_failed',
+      request_id: input.observationId,
       observationId: input.observationId,
+      observation_id: input.observationId,
+      client_observation_id: input.clientObservationId,
+      device_id: input.deviceId,
+      status: 'classification_failed',
+      classifier_mode: getAiMode(env),
+      duration_ms: 0,
+      error_code: 'classification_failed',
       error: String(error),
-    }));
+    });
     await updateObservationStatus(env.OBSERVATION_DB, input.observationId, 'classification_failed');
   }
 }
@@ -1992,7 +2123,7 @@ function isUploadedFile(value: unknown): value is File {
 
 function detectImageType(
   bytes: Uint8Array,
-  contentType: string,
+  _contentType: string,
 ): { contentType: 'image/jpeg' | 'image/webp'; extension: 'jpg' | 'webp' } | null {
   const isJpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
   if (isJpeg) {
@@ -2008,12 +2139,6 @@ function detectImageType(
     bytes[10] === 0x42 &&
     bytes[11] === 0x50;
   if (isWebp) {
-    return { contentType: 'image/webp', extension: 'webp' };
-  }
-  if (contentType === 'image/jpeg') {
-    return { contentType: 'image/jpeg', extension: 'jpg' };
-  }
-  if (contentType === 'image/webp') {
     return { contentType: 'image/webp', extension: 'webp' };
   }
   return null;
@@ -2052,6 +2177,69 @@ function base64ToBytes(value: string): Uint8Array {
 function parseUploadLimit(env: Env): number {
   const parsed = Number(env.MAX_UPLOAD_BYTES);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_UPLOAD_BYTES;
+}
+
+function requestIdFrom(request: Request): string {
+  return request.headers.get('x-request-id')
+    ?? request.headers.get('cf-ray')
+    ?? crypto.randomUUID();
+}
+
+function logUploadRejected(
+  request: Request,
+  deviceId: string,
+  clientObservationId: string,
+  errorCode: string,
+): void {
+  logEvent('warn', {
+    event: 'observation_upload_rejected',
+    request_id: requestIdFrom(request),
+    client_observation_id: clientObservationId,
+    device_id: deviceId,
+    status: 'rejected',
+    duration_ms: 0,
+    error_code: errorCode,
+  });
+}
+
+function logEvent(
+  level: 'info' | 'warn' | 'error',
+  fields: {
+    event: string;
+    request_id?: string;
+    observation_id?: string;
+    observationId?: string;
+    client_observation_id?: string;
+    device_id?: string;
+    status?: string;
+    classifier_mode?: string | null;
+    duration_ms?: number;
+    error_code?: string;
+    error?: string;
+  },
+): void {
+  const entry = {
+    event: fields.event,
+    request_id: fields.request_id,
+    observation_id: fields.observation_id ?? fields.observationId,
+    client_observation_id: fields.client_observation_id,
+    device_id: fields.device_id,
+    status: fields.status,
+    classifier_mode: fields.classifier_mode,
+    duration_ms: fields.duration_ms,
+    error_code: fields.error_code,
+    error: fields.error ? fields.error.slice(0, 300) : undefined,
+  };
+  const line = JSON.stringify(entry);
+  if (level === 'error') {
+    console.error(line);
+    return;
+  }
+  if (level === 'warn') {
+    console.warn(line);
+    return;
+  }
+  console.log(line);
 }
 
 function inferBroadCategory(labels: MlLabel[]): BroadCategory {
