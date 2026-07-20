@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "expo start --web",
     "build": "expo export --platform web --output-dir dist && node scripts/fix-pages-base.mjs",
+    "android:doctor": "node scripts/android-sdk-doctor.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

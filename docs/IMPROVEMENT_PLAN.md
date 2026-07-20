@@ -275,7 +275,7 @@ Exit criteria:
 
 ## Phase 6: THINKLET Client Migration
 
-Status: implemented in code. Android build/device verification is blocked by missing local Android SDK path.
+Status: implemented in code. Android build/device verification is blocked by missing local Android SDK path. `npm run android:doctor` documents the SDK issue.
 
 Goal:
 
@@ -335,7 +335,7 @@ Exit criteria:
 
 ## Phase 8: field-android Compatibility Update
 
-Status: implemented in code. Android build/device verification is blocked by missing local Android SDK path.
+Status: implemented in code. Android build/device verification is blocked by missing local Android SDK path. `npm run android:doctor` documents the SDK issue.
 
 Goal:
 

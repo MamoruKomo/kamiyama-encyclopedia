@@ -970,9 +970,6 @@ async function updateObservationReview(
   env: Env,
   corsHeaders: HeadersInit,
 ): Promise<Response> {
-  if (!(await isAuthorized(request, env))) {
-    return json({ error: 'unauthorized' }, corsHeaders, 401);
-  }
   if (!env.OBSERVATION_DB) {
     return json({ error: 'storage_not_configured' }, corsHeaders, 503);
   }
@@ -987,6 +984,9 @@ async function updateObservationReview(
     action?: string;
     species_id?: string;
   }>();
+  if (body.action !== 'confirm' && !(await isAuthorized(request, env))) {
+    return json({ error: 'unauthorized' }, corsHeaders, 401);
+  }
   const now = new Date().toISOString();
 
   if (body.action === 'confirm') {

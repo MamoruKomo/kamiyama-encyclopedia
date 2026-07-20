@@ -403,6 +403,9 @@ Verification completed:
 - `sync-worker`: remote D1 database creation and migration
 - `sync-worker`: production Worker deploy with D1 + KV image fallback
 - `sync-worker`: production v1 upload -> candidate_ready -> confirm -> image fetch smoke test, followed by cleanup of the smoke observation/image
+- `sync-worker`: Web/PWA candidate confirmation is public for MVP; management review actions still require `SYNC_WRITE_TOKEN`.
+- `sync-worker`: 2026-07-21 production smoke confirmed no-token `confirm` succeeds and no-token `reject` returns 401.
+- Android SDK: `npm run android:doctor` confirms both Android projects point to `/Users/mamoru/Library/Android/sdk`, but that path is missing `platforms` or `platform-tools`.
 - Web/PWA: `npm run typecheck`
 - Web/PWA: `npm run build`
 
