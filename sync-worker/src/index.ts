@@ -838,6 +838,7 @@ async function createObservationV1(
   ctx: ExecutionContext,
   corsHeaders: HeadersInit,
 ): Promise<Response> {
+  const startedAt = Date.now();
   if (!(await isAuthorized(request, env))) {
     return json({ error: 'unauthorized' }, corsHeaders, 401);
   }
@@ -861,6 +862,7 @@ async function createObservationV1(
   );
   const duplicate = await findObservationByClient(env.OBSERVATION_DB, deviceId, clientObservationId);
   if (duplicate) {
+    await incrementMetric(env.OBSERVATION_DB, 'duplicate_send_count');
     logEvent('info', {
       event: 'observation_duplicate',
       request_id: requestIdFrom(request),
@@ -869,7 +871,7 @@ async function createObservationV1(
       device_id: duplicate.device_id,
       status: duplicate.status,
       classifier_mode: duplicate.classifier_mode,
-      duration_ms: 0,
+      duration_ms: elapsedMs(startedAt),
     });
     return json({
       observation_id: duplicate.id,
@@ -882,18 +884,18 @@ async function createObservationV1(
 
   const maxBytes = parseUploadLimit(env);
   if (image.size <= 0) {
-    logUploadRejected(request, deviceId, clientObservationId, 'empty_image');
+    logUploadRejected(request, deviceId, clientObservationId, 'empty_image', startedAt);
     return json({ error: 'empty_image' }, corsHeaders, 400);
   }
   if (image.size > maxBytes) {
-    logUploadRejected(request, deviceId, clientObservationId, 'image_too_large');
+    logUploadRejected(request, deviceId, clientObservationId, 'image_too_large', startedAt);
     return json({ error: 'image_too_large', max_bytes: maxBytes }, corsHeaders, 413);
   }
 
   const imageBytes = new Uint8Array(await image.arrayBuffer());
   const imageType = detectImageType(imageBytes, image.type);
   if (!imageType) {
-    logUploadRejected(request, deviceId, clientObservationId, 'unsupported_image_type');
+    logUploadRejected(request, deviceId, clientObservationId, 'unsupported_image_type', startedAt);
     return json({ error: 'unsupported_image_type' }, corsHeaders, 415);
   }
 
@@ -946,6 +948,7 @@ async function createObservationV1(
     await deleteObservationImage(env, imageKey);
     const existing = await findObservationByClient(env.OBSERVATION_DB, deviceId, clientObservationId);
     if (existing) {
+      await incrementMetric(env.OBSERVATION_DB, 'duplicate_send_count');
       logEvent('info', {
         event: 'observation_duplicate_after_insert_conflict',
         request_id: requestIdFrom(request),
@@ -954,7 +957,7 @@ async function createObservationV1(
         device_id: existing.device_id,
         status: existing.status,
         classifier_mode: existing.classifier_mode,
-        duration_ms: 0,
+        duration_ms: elapsedMs(startedAt),
       });
       return json({
         observation_id: existing.id,
@@ -975,7 +978,7 @@ async function createObservationV1(
     device_id: deviceId,
     status: 'uploaded',
     classifier_mode: getAiMode(env),
-    duration_ms: 0,
+    duration_ms: elapsedMs(startedAt),
   });
 
   ctx.waitUntil(classifyPersistedObservation(env, {
@@ -1068,6 +1071,7 @@ async function updateObservationReview(
   env: Env,
   corsHeaders: HeadersInit,
 ): Promise<Response> {
+  const startedAt = Date.now();
   if (!env.OBSERVATION_DB) {
     return json({ error: 'storage_not_configured' }, corsHeaders, 503);
   }
@@ -1108,7 +1112,7 @@ async function updateObservationReview(
       device_id: row.device_id,
       status: 'confirmed',
       classifier_mode: row.classifier_mode,
-      duration_ms: 0,
+      duration_ms: elapsedMs(startedAt),
     });
     return json({ ok: true, status: 'confirmed', observation_id: observationId }, corsHeaders);
   }
@@ -1123,7 +1127,7 @@ async function updateObservationReview(
       device_id: row.device_id,
       status: 'rejected',
       classifier_mode: row.classifier_mode,
-      duration_ms: 0,
+      duration_ms: elapsedMs(startedAt),
     });
     return json({ ok: true, status: 'rejected', observation_id: observationId }, corsHeaders);
   }
@@ -1290,6 +1294,7 @@ async function getAdminMetrics(
   const statusCounts = Object.fromEntries(
     (statusRows.results ?? []).map((row) => [row.status, row.count]),
   );
+  const duplicateSendCount = await readMetric(env.OBSERVATION_DB, 'duplicate_send_count');
   return json({
     uploaded_count: statusCounts.uploaded ?? 0,
     classifying_count: statusCounts.classifying ?? 0,
@@ -1299,7 +1304,7 @@ async function getAdminMetrics(
     needs_retake_count: statusCounts.needs_retake ?? 0,
     confirmed_count: statusCounts.confirmed ?? 0,
     rejected_count: statusCounts.rejected ?? 0,
-    duplicate_send_count: null,
+    duplicate_send_count: duplicateSendCount,
     devices: (deviceRows.results ?? []).map((row) => ({
       device_id: row.device_id,
       total: row.total,
@@ -1497,6 +1502,7 @@ async function classifyPersistedObservation(
   env: Env,
   input: ClassificationInput,
 ): Promise<void> {
+  const startedAt = Date.now();
   if (!env.OBSERVATION_DB) {
     return;
   }
@@ -1536,7 +1542,7 @@ async function classifyPersistedObservation(
       device_id: input.deviceId,
       status: nextStatus,
       classifier_mode: result.classifier_mode,
-      duration_ms: 0,
+      duration_ms: elapsedMs(startedAt),
     });
   } catch (error) {
     logEvent('error', {
@@ -1548,7 +1554,7 @@ async function classifyPersistedObservation(
       device_id: input.deviceId,
       status: 'classification_failed',
       classifier_mode: getAiMode(env),
-      duration_ms: 0,
+      duration_ms: elapsedMs(startedAt),
       error_code: 'classification_failed',
       error: String(error),
     });
@@ -1802,6 +1808,37 @@ async function updateObservationStatus(
   await db.prepare(
     'UPDATE observations SET status = ?, updated_at = ? WHERE id = ?',
   ).bind(status, new Date().toISOString(), observationId).run();
+}
+
+async function incrementMetric(db: D1Database, key: string): Promise<void> {
+  try {
+    await db.prepare(
+      `INSERT INTO sync_metrics (key, value, updated_at)
+       VALUES (?, 1, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         value = value + 1,
+         updated_at = excluded.updated_at`,
+    ).bind(key, new Date().toISOString()).run();
+  } catch (error) {
+    logEvent('warn', {
+      event: 'metric_increment_failed',
+      request_id: key,
+      error_code: 'metric_increment_failed',
+      duration_ms: 0,
+      error: String(error),
+    });
+  }
+}
+
+async function readMetric(db: D1Database, key: string): Promise<number | null> {
+  try {
+    const row = await db.prepare(
+      'SELECT value FROM sync_metrics WHERE key = ?',
+    ).bind(key).first<{ value: number }>();
+    return row?.value ?? 0;
+  } catch {
+    return null;
+  }
 }
 
 async function queryObservationRows(
@@ -2185,11 +2222,16 @@ function requestIdFrom(request: Request): string {
     ?? crypto.randomUUID();
 }
 
+function elapsedMs(startedAt: number): number {
+  return Math.max(0, Date.now() - startedAt);
+}
+
 function logUploadRejected(
   request: Request,
   deviceId: string,
   clientObservationId: string,
   errorCode: string,
+  startedAt: number,
 ): void {
   logEvent('warn', {
     event: 'observation_upload_rejected',
@@ -2197,7 +2239,7 @@ function logUploadRejected(
     client_observation_id: clientObservationId,
     device_id: deviceId,
     status: 'rejected',
-    duration_ms: 0,
+    duration_ms: elapsedMs(startedAt),
     error_code: errorCode,
   });
 }
@@ -2534,11 +2576,12 @@ async function analyzeSpeciesPhoto(
   });
 
   if (!response.ok) {
-    console.error(JSON.stringify({
-      message: 'openai_analysis_failed',
-      status: response.status,
-      body: await response.text(),
-    }));
+    logEvent('warn', {
+      event: 'openai_analysis_failed',
+      request_id: sanitizeId(payload.id) ?? 'openai',
+      error_code: `openai_http_${response.status}`,
+      duration_ms: 0,
+    });
     return null;
   }
 
@@ -2546,15 +2589,21 @@ async function analyzeSpeciesPhoto(
   const outputText = extractOutputText(data);
   const parsed = parseJsonObject(outputText);
   if (!parsed) {
-    console.error(JSON.stringify({ message: 'openai_analysis_parse_failed', outputText }));
+    logEvent('warn', {
+      event: 'openai_analysis_parse_failed',
+      request_id: sanitizeId(payload.id) ?? 'openai',
+      error_code: 'openai_parse_failed',
+      duration_ms: 0,
+    });
     return null;
   }
   if (!validateSpeciesAnalysisSchema(parsed)) {
-    console.error(JSON.stringify({
-      message: 'openai_analysis_schema_failed',
-      schema: SPECIES_ANALYSIS_SCHEMA,
-      outputText,
-    }));
+    logEvent('warn', {
+      event: 'openai_analysis_schema_failed',
+      request_id: sanitizeId(payload.id) ?? 'openai',
+      error_code: 'openai_schema_failed',
+      duration_ms: 0,
+    });
     return null;
   }
 
@@ -2661,11 +2710,12 @@ async function fetchGbifReferenceImage(
       headers: { accept: 'application/json' },
     });
     if (!response.ok) {
-      console.error(JSON.stringify({
-        message: 'gbif_reference_fetch_failed',
-        scientificName: candidate.scientificName,
-        status: response.status,
-      }));
+      logEvent('warn', {
+        event: 'gbif_reference_fetch_failed',
+        request_id: speciesId(candidate),
+        error_code: `gbif_http_${response.status}`,
+        duration_ms: 0,
+      });
       return null;
     }
 
@@ -2697,11 +2747,13 @@ async function fetchGbifReferenceImage(
       license: media.license,
     };
   } catch (error) {
-    console.error(JSON.stringify({
-      message: 'gbif_reference_fetch_error',
-      scientificName: candidate.scientificName,
+    logEvent('warn', {
+      event: 'gbif_reference_fetch_error',
+      request_id: speciesId(candidate),
+      error_code: 'gbif_fetch_error',
+      duration_ms: 0,
       error: String(error),
-    }));
+    });
     return null;
   }
 }

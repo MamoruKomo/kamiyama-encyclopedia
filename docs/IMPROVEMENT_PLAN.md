@@ -488,11 +488,11 @@ Implemented:
   - needs retake count
   - device totals
   - device last communication time
+  - duplicate send count persisted in D1 `sync_metrics`
 
 Remaining:
 
-- `duration_ms` is currently logged but still coarse for async classification; add real measured durations around each route and classification stage.
-- Duplicate send count is detected in logs but not persisted as an aggregate counter.
+- `duration_ms` is measured for upload, review actions, and classification. Some non-route helper failures still use `0` when no request timer exists.
 - No dashboard UI exists yet.
 - No alerting exists yet.
 
@@ -521,6 +521,11 @@ Implemented Worker tests:
 - Public detail API returns rounded public coordinates only.
 - Public detail API does not expose `device_id`, exact `latitude`, or exact `longitude`.
 - Admin metrics requires auth and returns status/device counters.
+- Oversized image rejection.
+- Upload without latitude/longitude keeps exact and public coordinates null.
+- Simulated D1 insert failure deletes the already stored image.
+- Simulated R2 put failure does not create a D1 row.
+- `AI_MODE=openai` falls back to free-mode candidates when OpenAI fails.
 
 Command:
 
@@ -531,12 +536,7 @@ npm test
 
 Remaining Worker tests:
 
-- Oversized image rejection.
-- Missing latitude/longitude.
-- Simulated D1 write failure and image cleanup.
-- Simulated R2 write failure.
 - `AI_MODE=openai` with mocked OpenAI response.
-- OpenAI failure fallback.
 - Public list/map filters with multiple observations.
 
 Remaining THINKLET tests:

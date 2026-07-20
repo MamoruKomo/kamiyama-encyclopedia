@@ -35,6 +35,28 @@ test('rejects unsupported image bytes before storing', async () => {
   assert.equal(env.OBSERVATIONS.store.size, 0);
 });
 
+test('rejects oversized image before storing', async () => {
+  const env = makeEnv({ MAX_UPLOAD_BYTES: '4' });
+  const form = new FormData();
+  form.append('image', new Blob([jpegBytes()], { type: 'image/jpeg' }), 'large.jpg');
+  form.append('device_id', 'device-a');
+  form.append('client_observation_id', 'client-large');
+
+  const response = await worker.fetch(
+    new Request('https://worker.test/api/v1/observations', {
+      method: 'POST',
+      headers: { authorization: 'Bearer test-token' },
+      body: form,
+    }),
+    env,
+    makeCtx(),
+  );
+
+  assert.equal(response.status, 413);
+  assert.equal(env.OBSERVATION_DB.rows.size, 0);
+  assert.equal(env.OBSERVATIONS.store.size, 0);
+});
+
 test('uploads, classifies, confirms, and hides exact location in public API', async () => {
   const env = makeEnv();
   const ctx = makeCtx();
@@ -116,6 +138,124 @@ test('uploads, classifies, confirms, and hides exact location in public API', as
   );
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).duplicate, true);
+
+  const metrics = await worker.fetch(
+    new Request('https://worker.test/api/v1/admin/metrics', {
+      headers: { authorization: 'Bearer test-token' },
+    }),
+    env,
+    makeCtx(),
+  );
+  assert.equal((await metrics.json()).duplicate_send_count, 1);
+});
+
+test('accepts upload without latitude and keeps public coordinates null', async () => {
+  const env = makeEnv();
+  const ctx = makeCtx();
+  const form = new FormData();
+  form.append('image', new Blob([jpegBytes()], { type: 'image/jpeg' }), 'plant.jpg');
+  form.append('device_id', 'thinklet-2');
+  form.append('client_observation_id', 'capture-no-location');
+  form.append('captured_at', '2026-07-20T10:00:00.000Z');
+  form.append('ml_labels_json', JSON.stringify([{ text: 'plant', confidence: 0.8 }]));
+
+  const upload = await worker.fetch(
+    new Request('https://worker.test/api/v1/observations', {
+      method: 'POST',
+      headers: { authorization: 'Bearer test-token' },
+      body: form,
+    }),
+    env,
+    ctx,
+  );
+  assert.equal(upload.status, 201);
+  await ctx.flush();
+  const row = [...env.OBSERVATION_DB.rows.values()][0];
+  assert.equal(row.latitude, null);
+  assert.equal(row.longitude, null);
+  assert.equal(row.public_latitude, null);
+  assert.equal(row.public_longitude, null);
+});
+
+test('deletes stored image when D1 insert fails', async () => {
+  const env = makeEnv();
+  env.OBSERVATION_DB.failInsertObservation = true;
+  const form = new FormData();
+  form.append('image', new Blob([jpegBytes()], { type: 'image/jpeg' }), 'cleanup.jpg');
+  form.append('device_id', 'device-cleanup');
+  form.append('client_observation_id', 'client-cleanup');
+
+  const response = await worker.fetch(
+    new Request('https://worker.test/api/v1/observations', {
+      method: 'POST',
+      headers: { authorization: 'Bearer test-token' },
+      body: form,
+    }),
+    env,
+    makeCtx(),
+  );
+
+  assert.equal(response.status, 500);
+  assert.equal(env.OBSERVATION_DB.rows.size, 0);
+  assert.equal(env.OBSERVATIONS.store.size, 0);
+});
+
+test('does not write D1 row when R2 put fails', async () => {
+  const env = makeEnv({ OBSERVATION_IMAGES: new MockR2({ failPut: true }) });
+  const form = new FormData();
+  form.append('image', new Blob([jpegBytes()], { type: 'image/jpeg' }), 'r2.jpg');
+  form.append('device_id', 'device-r2');
+  form.append('client_observation_id', 'client-r2');
+
+  const response = await worker.fetch(
+    new Request('https://worker.test/api/v1/observations', {
+      method: 'POST',
+      headers: { authorization: 'Bearer test-token' },
+      body: form,
+    }),
+    env,
+    makeCtx(),
+  );
+
+  assert.equal(response.status, 500);
+  assert.equal(env.OBSERVATION_DB.rows.size, 0);
+});
+
+test('falls back to free classifier when OpenAI call fails', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('upstream failed', { status: 500 });
+  try {
+    const env = makeEnv({
+      AI_MODE: 'openai',
+      OPENAI_API_KEY: 'test-openai-key',
+      OPENAI_MODEL: 'test-model',
+    });
+    const ctx = makeCtx();
+    const form = new FormData();
+    form.append('image', new Blob([jpegBytes()], { type: 'image/jpeg' }), 'openai-fallback.jpg');
+    form.append('device_id', 'device-openai');
+    form.append('client_observation_id', 'client-openai');
+    form.append('captured_at', '2026-07-20T10:00:00.000Z');
+    form.append('ml_labels_json', JSON.stringify([{ text: 'rhinoceros beetle', confidence: 0.9 }]));
+
+    const upload = await worker.fetch(
+      new Request('https://worker.test/api/v1/observations', {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token' },
+        body: form,
+      }),
+      env,
+      ctx,
+    );
+    assert.equal(upload.status, 201);
+    await ctx.flush();
+    const row = [...env.OBSERVATION_DB.rows.values()][0];
+    assert.equal(row.status, 'candidate_ready');
+    assert.equal(row.classifier_mode, 'openai');
+    assert.match(row.candidate_species_json, /trypoxylus-dichotomus/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('admin metrics requires auth and returns status counters', async () => {
@@ -143,10 +283,11 @@ test('admin metrics requires auth and returns status counters', async () => {
   assert.equal(authorized.status, 200);
   const json = await authorized.json();
   assert.equal(json.confirmed_count, 1);
+  assert.equal(json.duplicate_send_count, 0);
   assert.equal(json.devices[0].device_id, 'device-a');
 });
 
-function makeEnv() {
+function makeEnv(overrides = {}) {
   return {
     OBSERVATIONS: new MockKv(),
     OBSERVATION_DB: new MockD1(),
@@ -154,6 +295,7 @@ function makeEnv() {
     AI_MODE: 'free',
     MAX_UPLOAD_BYTES: '1024',
     ALLOWED_ORIGINS: 'https://worker.test',
+    ...overrides,
   };
 }
 
@@ -239,6 +381,8 @@ class MockD1 {
   constructor() {
     this.rows = new Map();
     this.species = new Map();
+    this.metrics = new Map();
+    this.failInsertObservation = false;
   }
 
   prepare(sql) {
@@ -282,6 +426,9 @@ class MockStatement {
     }
     if (sql.includes('select * from species where id = ?')) {
       return this.db.species.get(this.args[0]) ?? null;
+    }
+    if (sql.includes('select value from sync_metrics where key = ?')) {
+      return { value: this.db.metrics.get(this.args[0]) ?? 0 };
     }
     if (sql.includes('count(*) as total') && sql.includes('where device_id = ?')) {
       const rows = [...this.db.rows.values()].filter((row) => row.device_id === this.args[0]);
@@ -340,6 +487,9 @@ class MockStatement {
   async run() {
     const sql = normalizeSql(this.sql);
     if (sql.startsWith('insert into observations')) {
+      if (this.db.failInsertObservation) {
+        throw new Error('simulated_d1_insert_failure');
+      }
       const row = makeRow({
         id: this.args[0],
         client_observation_id: this.args[1],
@@ -366,6 +516,10 @@ class MockStatement {
         updated_at: this.args[22],
       });
       this.db.rows.set(row.id, row);
+      return { success: true };
+    }
+    if (sql.startsWith('insert into sync_metrics')) {
+      this.db.metrics.set(this.args[0], (this.db.metrics.get(this.args[0]) ?? 0) + 1);
       return { success: true };
     }
     if (sql.startsWith('insert or ignore into species')) {
@@ -413,6 +567,35 @@ class MockStatement {
       return { success: true };
     }
     return { success: true };
+  }
+}
+
+class MockR2 {
+  constructor(options = {}) {
+    this.objects = new Map();
+    this.failPut = options.failPut ?? false;
+  }
+
+  async put(key, value, options = {}) {
+    if (this.failPut) {
+      throw new Error('simulated_r2_put_failure');
+    }
+    this.objects.set(key, { value, options });
+  }
+
+  async get(key) {
+    const object = this.objects.get(key);
+    if (!object) {
+      return null;
+    }
+    return {
+      body: object.value,
+      httpMetadata: object.options.httpMetadata ?? null,
+    };
+  }
+
+  async delete(key) {
+    this.objects.delete(key);
   }
 }
 
