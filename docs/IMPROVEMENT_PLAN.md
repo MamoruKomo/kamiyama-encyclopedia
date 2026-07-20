@@ -385,32 +385,75 @@ Exit criteria:
 
 - Historical discoveries remain visible after clients switch to D1-backed APIs.
 
-## Phase 10: Cleanup And Deprecation
+## Phase 10: API Surface
 
-Status: partially complete. Production Worker is deployed with D1 and KV image fallback. Legacy API/KV cleanup is intentionally deferred until R2 is enabled and historical KV migration is verified.
+Status: implemented in Worker and Web/PWA integration updated. Production Worker deploy still needs to be refreshed after this phase's final verification.
+
+Goal:
+
+Expose the target public, device, and review API shape while keeping legacy compatibility during migration.
+
+Deliverables:
+
+- Public API:
+  - `GET /api/v1/public/observations`
+  - `GET /api/v1/public/observations/:id`
+  - `GET /api/v1/public/species`
+  - `GET /api/v1/public/map`
+- Device API:
+  - `POST /api/v1/observations`
+  - `GET /api/v1/devices/me/sync-status`
+- Review API:
+  - `GET /api/v1/review/observations`
+  - `GET /api/v1/review/observations/:id`
+  - `POST /api/v1/review/observations/:id/confirm`
+  - `POST /api/v1/review/observations/:id/reject`
+  - `POST /api/v1/review/observations/:id/reclassify`
+- Cursor pagination and filters:
+  - `cursor`
+  - `limit`
+  - `status`
+  - `from` / `to`
+  - `species_id`
+  - `bbox=minLon,minLat,maxLon,maxLat`
+- Public routes return only confirmed observations and public rounded coordinates.
+- Public routes do not return `device_id`, exact `latitude`, or exact `longitude`.
+- Web/PWA now pulls confirmed observations from `/api/v1/public/observations` first.
+- Web/PWA review inbox now uses `/api/v1/review/observations` and `/confirm`.
+
+Compatibility:
+
+- Legacy JSON `POST /observations` and `GET /observations` remain available until historical KV migration and Android verification are complete.
+- The older `GET /api/v1/observations` and `PATCH /api/v1/observations/:id` remain available for compatibility.
+- Cleanup/deprecation is deferred until R2 is enabled and client migration is verified.
+
+Verification:
+
+- Worker typecheck.
+- Web typecheck.
+- Web build.
+- Worker dry-run/deploy.
+- Public API smoke test confirming exact location and `device_id` are not returned.
+- Review API smoke test.
+
+Exit criteria:
+
+- The official Phase 10 API routes respond in production.
+- Public API shows confirmed discoveries only.
+- Review API can confirm a candidate without placing unconfirmed observations in the public dex.
+- Exact location is not exposed through public API.
+
+## Later Cleanup And Deprecation
+
+Status: deferred.
 
 Goal:
 
 Remove temporary compatibility only after all clients are migrated and verified.
 
-Deliverables:
+Deferred until:
 
-- Deprecate legacy JSON `POST /observations`.
-- Deprecate legacy KV list path after migration and backup.
-- Keep KV only for config or short-lived cache.
-- Update README and docs.
-
-Verification:
-
-- Web build.
-- Worker typecheck/deploy.
-- Android builds.
-- Device checks if production field use depends on Android apps.
-
-Exit criteria:
-
-- Target architecture is active:
-  - R2 for images.
-  - D1 for observations, status, candidates, location, and species.
-  - KV only for settings/cache.
-  - Human confirmation before dex registration.
+- R2 is enabled in the Cloudflare account.
+- Historical KV migration has been dry-run and then run safely.
+- THINKLET and `field-android` debug APKs build on a local Android SDK.
+- Device checks confirm both Android apps still work.

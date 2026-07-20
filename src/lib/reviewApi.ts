@@ -45,7 +45,7 @@ export async function pullReviewObservations(): Promise<ReviewObservation[]> {
   if (!endpoint) {
     return [];
   }
-  const response = await fetch(`${endpoint}/api/v1/observations?include_review=true`);
+  const response = await fetch(`${endpoint}/api/v1/review/observations?status=candidate_ready&limit=100`);
   if (response.status === 404 || response.status === 503) {
     return [];
   }
@@ -67,8 +67,8 @@ export async function confirmReviewObservation(
   if (!endpoint) {
     throw new Error('同期APIが未設定です');
   }
-  const response = await fetch(`${endpoint}/api/v1/observations/${observation.id}`, {
-    method: 'PATCH',
+  const response = await fetch(`${endpoint}/api/v1/review/observations/${observation.id}/confirm`, {
+    method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ action: 'confirm', species_id: speciesId }),
   });

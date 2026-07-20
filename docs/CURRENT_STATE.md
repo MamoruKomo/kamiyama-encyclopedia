@@ -157,9 +157,26 @@ Current implemented routes:
 - `GET /health`
 - `POST /observations`
 - `GET /observations?since=<millis>`
+- `POST /api/v1/observations`
+- `GET /api/v1/observations`
+- `GET /api/v1/observations/:id/image`
+- `PATCH /api/v1/observations/:id`
+- `GET /api/v1/devices/me/sync-status`
+- `GET /api/v1/public/observations`
+- `GET /api/v1/public/observations/:id`
+- `GET /api/v1/public/observations/:id/image`
+- `GET /api/v1/public/species`
+- `GET /api/v1/public/map`
+- `GET /api/v1/review/observations`
+- `GET /api/v1/review/observations/:id`
+- `POST /api/v1/review/observations/:id/confirm`
+- `POST /api/v1/review/observations/:id/reject`
+- `POST /api/v1/review/observations/:id/reclassify`
 - `OPTIONS *`
 
-The v1 route `POST /api/v1/observations` is now implemented for multipart uploads.
+The v1 route `POST /api/v1/observations` is implemented for multipart uploads. Phase 10 public and review routes are also implemented. List-style v1 routes support `cursor`, `limit`, `status`, `from`, `to`, `species_id`, and `bbox=minLon,minLat,maxLon,maxLat` where applicable.
+
+Public routes return confirmed observations only. They return rounded `public_latitude` / `public_longitude` and do not expose `device_id`, exact `latitude`, or exact `longitude`.
 
 ### Upload Format
 
@@ -202,7 +219,7 @@ Reference image cache:
 - Value: GBIF reference image metadata
 - TTL: 14 days
 
-KV currently stores observation JSON and photo data URLs. R2 and D1 are not used yet.
+Legacy KV still stores old observation JSON and photo data URLs. New v1 uploads store observation records in D1. Images go to R2 when available; production currently stores v1 images in KV under `image:${image_key}` because R2 is disabled for the Cloudflare account.
 
 ### List Behavior
 
@@ -383,7 +400,10 @@ The following migration pieces have now been added:
 - New Worker upload API: `POST /api/v1/observations`
 - New Worker list API: `GET /api/v1/observations`
 - New Worker image API: `GET /api/v1/observations/:id/image`
-- New Worker review API: `PATCH /api/v1/observations/:id`
+- New Worker compatibility review API: `PATCH /api/v1/observations/:id`
+- Phase 10 public APIs under `/api/v1/public/*`
+- Phase 10 review APIs under `/api/v1/review/*`
+- Phase 10 device sync status API: `GET /api/v1/devices/me/sync-status`
 - R2 image storage for new v1 uploads when R2 is enabled; current production uses KV image fallback because the Cloudflare account has R2 disabled.
 - SHA-256 calculation and D1 persistence.
 - Duplicate `(device_id, client_observation_id)` handling.
@@ -405,6 +425,10 @@ Verification completed:
 - `sync-worker`: production v1 upload -> candidate_ready -> confirm -> image fetch smoke test, followed by cleanup of the smoke observation/image
 - `sync-worker`: Web/PWA candidate confirmation is public for MVP; management review actions still require `SYNC_WRITE_TOKEN`.
 - `sync-worker`: 2026-07-21 production smoke confirmed no-token `confirm` succeeds and no-token `reject` returns 401.
+- `sync-worker`: Phase 10 API implementation passed local typecheck, dry-run, and production deploy on 2026-07-21. Deployed Worker version: `7f14b744-aeac-4e8e-8489-e6f9996ad7f8`.
+- `sync-worker`: Phase 10 production smoke uploaded a beetle-labelled test JPEG, saw `candidate_ready` with `trypoxylus-dichotomus` and `prosopocoilus-inclinatus`, confirmed `trypoxylus-dichotomus`, verified public detail/map/image routes, then rejected the smoke observation to remove it from public results.
+- `sync-worker`: Public detail smoke returned `public_latitude` / `public_longitude` only and did not expose `device_id`, exact `latitude`, or exact `longitude`.
+- `sync-worker`: `GET /api/v1/devices/me/sync-status` returns 401 without a bearer token and returns device counters with a valid token.
 - Android SDK: `npm run android:doctor` confirms both Android projects point to `/Users/mamoru/Library/Android/sdk`, but that path is missing `platforms` or `platform-tools`.
 - Web/PWA: `npm run typecheck`
 - Web/PWA: `npm run build`

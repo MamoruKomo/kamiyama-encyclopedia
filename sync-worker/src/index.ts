@@ -83,6 +83,20 @@ type CandidateSpeciesResult = {
   reason: string;
 };
 
+type SpeciesRow = {
+  id: string;
+  japanese_name: string;
+  scientific_name: string;
+  category: 'plant' | 'insect';
+  description: string;
+  active_months_json: string;
+  habitat_tags_json: string;
+  image_url: string | null;
+  is_sensitive_location: number;
+  created_at: string;
+  updated_at: string;
+};
+
 type ClassificationInput = {
   observationId: string;
   clientObservationId: string;
@@ -701,6 +715,46 @@ export default {
         return await listObservationsV1(url, env, corsHeaders);
       }
 
+      if (url.pathname === '/api/v1/devices/me/sync-status' && request.method === 'GET') {
+        return await getDeviceSyncStatus(request, url, env, corsHeaders);
+      }
+
+      if (url.pathname === '/api/v1/public/observations' && request.method === 'GET') {
+        return await listPublicObservations(url, env, corsHeaders);
+      }
+
+      const publicImageMatch = url.pathname.match(/^\/api\/v1\/public\/observations\/([^/]+)\/image$/);
+      if (publicImageMatch && request.method === 'GET') {
+        return await getPublicObservationImage(publicImageMatch[1], env, corsHeaders);
+      }
+
+      const publicObservationMatch = url.pathname.match(/^\/api\/v1\/public\/observations\/([^/]+)$/);
+      if (publicObservationMatch && request.method === 'GET') {
+        return await getPublicObservation(publicObservationMatch[1], env, corsHeaders);
+      }
+
+      if (url.pathname === '/api/v1/public/species' && request.method === 'GET') {
+        return await listPublicSpecies(url, env, corsHeaders);
+      }
+
+      if (url.pathname === '/api/v1/public/map' && request.method === 'GET') {
+        return await listPublicMap(url, env, corsHeaders);
+      }
+
+      if (url.pathname === '/api/v1/review/observations' && request.method === 'GET') {
+        return await listReviewObservations(url, env, corsHeaders);
+      }
+
+      const reviewObservationMatch = url.pathname.match(/^\/api\/v1\/review\/observations\/([^/]+)$/);
+      if (reviewObservationMatch && request.method === 'GET') {
+        return await getReviewObservation(reviewObservationMatch[1], env, corsHeaders);
+      }
+
+      const reviewActionMatch = url.pathname.match(/^\/api\/v1\/review\/observations\/([^/]+)\/(confirm|reject|reclassify)$/);
+      if (reviewActionMatch && request.method === 'POST') {
+        return await updateObservationReviewAction(reviewActionMatch[1], reviewActionMatch[2], request, env, ctx, corsHeaders);
+      }
+
       const imageMatch = url.pathname.match(/^\/api\/v1\/observations\/([^/]+)\/image$/);
       if (imageMatch && request.method === 'GET') {
         return await getObservationImage(imageMatch[1], env, corsHeaders);
@@ -1023,6 +1077,309 @@ async function updateObservationReview(
   return json({ error: 'invalid_action' }, corsHeaders, 400);
 }
 
+async function updateObservationReviewAction(
+  observationId: string,
+  action: string,
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (action === 'confirm') {
+    const body = await request.json<{ species_id?: string }>();
+    return await updateObservationReview(
+      observationId,
+      new Request(request.url, {
+        method: 'PATCH',
+        headers: request.headers,
+        body: JSON.stringify({ action: 'confirm', species_id: body.species_id }),
+      }),
+      env,
+      corsHeaders,
+    );
+  }
+  if (action === 'reject') {
+    return await updateObservationReview(
+      observationId,
+      new Request(request.url, {
+        method: 'PATCH',
+        headers: request.headers,
+        body: JSON.stringify({ action: 'reject' }),
+      }),
+      env,
+      corsHeaders,
+    );
+  }
+  if (action === 'reclassify') {
+    return await reclassifyObservation(observationId, request, env, ctx, corsHeaders);
+  }
+  return json({ error: 'invalid_action' }, corsHeaders, 400);
+}
+
+async function reclassifyObservation(
+  observationId: string,
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (!(await isAuthorized(request, env))) {
+    return json({ error: 'unauthorized' }, corsHeaders, 401);
+  }
+  if (!env.OBSERVATION_DB) {
+    return json({ error: 'storage_not_configured' }, corsHeaders, 503);
+  }
+  const row = await env.OBSERVATION_DB.prepare(
+    'SELECT * FROM observations WHERE id = ?',
+  ).bind(observationId).first<ObservationRow>();
+  if (!row) {
+    return json({ error: 'not_found' }, corsHeaders, 404);
+  }
+  ctx.waitUntil(classifyPersistedObservation(env, {
+    observationId: row.id,
+    clientObservationId: row.client_observation_id,
+    deviceId: row.device_id,
+    capturedAt: row.captured_at,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    mlLabels: safeJson(row.ml_labels_json, []),
+    imageDataUrl: null,
+  }));
+  return json({ ok: true, status: 'classifying', observation_id: observationId }, corsHeaders);
+}
+
+async function getDeviceSyncStatus(
+  request: Request,
+  url: URL,
+  env: Env,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (!(await isAuthorized(request, env))) {
+    return json({ error: 'unauthorized' }, corsHeaders, 401);
+  }
+  if (!env.OBSERVATION_DB) {
+    return json({ error: 'storage_not_configured' }, corsHeaders, 503);
+  }
+  const deviceId = sanitizeId(
+    request.headers.get('x-device-id') ?? url.searchParams.get('device_id') ?? '',
+  );
+  if (!deviceId) {
+    return json({ error: 'device_id_required' }, corsHeaders, 400);
+  }
+  const row = await env.OBSERVATION_DB.prepare(
+    `SELECT
+       COUNT(*) AS total,
+       MAX(received_at) AS last_received_at,
+       SUM(CASE WHEN status = 'uploaded' OR status = 'classifying' THEN 1 ELSE 0 END) AS pending_count,
+       SUM(CASE WHEN status = 'candidate_ready' OR status = 'needs_review' THEN 1 ELSE 0 END) AS review_count,
+       SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) AS confirmed_count,
+       SUM(CASE WHEN status = 'classification_failed' THEN 1 ELSE 0 END) AS failed_count
+     FROM observations
+     WHERE device_id = ?`,
+  ).bind(deviceId).first<{
+    total: number;
+    last_received_at: string | null;
+    pending_count: number | null;
+    review_count: number | null;
+    confirmed_count: number | null;
+    failed_count: number | null;
+  }>();
+  return json({
+    device_id: deviceId,
+    total: row?.total ?? 0,
+    last_received_at: row?.last_received_at ?? null,
+    pending_count: row?.pending_count ?? 0,
+    review_count: row?.review_count ?? 0,
+    confirmed_count: row?.confirmed_count ?? 0,
+    failed_count: row?.failed_count ?? 0,
+    serverTime: Date.now(),
+  }, corsHeaders);
+}
+
+async function listPublicObservations(
+  url: URL,
+  env: Env,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (!env.OBSERVATION_DB) {
+    return json({ observations: [], next_cursor: null, storage: 'not_configured' }, corsHeaders);
+  }
+  const page = await queryObservationRows(env.OBSERVATION_DB, url, {
+    visibility: 'public',
+    defaultStatus: 'confirmed',
+    allowedStatuses: new Set<ObservationStatus>(['confirmed']),
+  });
+  const speciesById = await loadSpeciesByIds(env.OBSERVATION_DB, page.rows.map((row) => row.confirmed_species_id));
+  return json({
+    observations: page.rows.map((row) => rowToPublicObservation(row, speciesById.get(row.confirmed_species_id ?? '') ?? null)),
+    next_cursor: page.nextCursor,
+    serverTime: Date.now(),
+    storage: 'd1',
+  }, corsHeaders);
+}
+
+async function getPublicObservation(
+  observationId: string,
+  env: Env,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (!env.OBSERVATION_DB) {
+    return json({ error: 'storage_not_configured' }, corsHeaders, 503);
+  }
+  const row = await env.OBSERVATION_DB.prepare(
+    "SELECT * FROM observations WHERE id = ? AND status = 'confirmed'",
+  ).bind(observationId).first<ObservationRow>();
+  if (!row) {
+    return json({ error: 'not_found' }, corsHeaders, 404);
+  }
+  const species = row.confirmed_species_id
+    ? await env.OBSERVATION_DB.prepare('SELECT * FROM species WHERE id = ?').bind(row.confirmed_species_id).first<SpeciesRow>()
+    : null;
+  return json({ observation: rowToPublicObservation(row, species ?? null) }, corsHeaders);
+}
+
+async function getPublicObservationImage(
+  observationId: string,
+  env: Env,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (!env.OBSERVATION_DB) {
+    return json({ error: 'storage_not_configured' }, corsHeaders, 503);
+  }
+  const row = await env.OBSERVATION_DB.prepare(
+    "SELECT image_key FROM observations WHERE id = ? AND status = 'confirmed'",
+  ).bind(observationId).first<{ image_key: string }>();
+  if (!row) {
+    return json({ error: 'not_found' }, corsHeaders, 404);
+  }
+  const image = await getStoredObservationImage(env, row.image_key);
+  if (!image) {
+    return json({ error: 'image_not_found' }, corsHeaders, 404);
+  }
+  const headers = new Headers(corsHeaders);
+  headers.set('content-type', image.contentType);
+  headers.set('cache-control', 'public, max-age=3600');
+  return new Response(image.body, { headers });
+}
+
+async function listPublicSpecies(
+  url: URL,
+  env: Env,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (!env.OBSERVATION_DB) {
+    return json({ species: [], next_cursor: null, storage: 'not_configured' }, corsHeaders);
+  }
+  await seedSpeciesCatalog(env.OBSERVATION_DB);
+  const category = url.searchParams.get('category');
+  const limit = normalizeLimit(url.searchParams.get('limit'), 100);
+  const cursor = decodeCursor(url.searchParams.get('cursor'));
+  const filters: string[] = [];
+  const binds: Array<string | number> = [];
+  if (category === 'plant' || category === 'insect') {
+    filters.push('category = ?');
+    binds.push(category);
+  }
+  if (cursor) {
+    filters.push('(updated_at > ? OR (updated_at = ? AND id > ?))');
+    binds.push(cursor.updatedAt, cursor.updatedAt, cursor.id);
+  }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const result = await env.OBSERVATION_DB.prepare(
+    `SELECT * FROM species ${where} ORDER BY updated_at ASC, id ASC LIMIT ?`,
+  ).bind(...binds, limit + 1).all<SpeciesRow>();
+  const rows = result.results ?? [];
+  const visibleRows = rows.slice(0, limit);
+  return json({
+    species: visibleRows.map(rowToPublicSpecies),
+    next_cursor: rows.length > limit ? encodeCursor(visibleRows[visibleRows.length - 1]) : null,
+    serverTime: Date.now(),
+    storage: 'd1',
+  }, corsHeaders);
+}
+
+async function listPublicMap(
+  url: URL,
+  env: Env,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (!env.OBSERVATION_DB) {
+    return json({ points: [], next_cursor: null, storage: 'not_configured' }, corsHeaders);
+  }
+  const page = await queryObservationRows(env.OBSERVATION_DB, url, {
+    visibility: 'public',
+    defaultStatus: 'confirmed',
+    allowedStatuses: new Set<ObservationStatus>(['confirmed']),
+  });
+  const speciesById = await loadSpeciesByIds(env.OBSERVATION_DB, page.rows.map((row) => row.confirmed_species_id));
+  return json({
+    points: page.rows
+      .filter((row) => row.public_latitude != null && row.public_longitude != null)
+      .map((row) => {
+        const species = speciesById.get(row.confirmed_species_id ?? '') ?? null;
+        return {
+          id: row.id,
+          latitude: row.public_latitude,
+          longitude: row.public_longitude,
+          captured_at: row.captured_at,
+          image_url: `/api/v1/public/observations/${row.id}/image`,
+          confirmed_species_id: row.confirmed_species_id,
+          japanese_name: species?.japanese_name ?? null,
+          category: species?.category ?? row.broad_category,
+        };
+      }),
+    next_cursor: page.nextCursor,
+    serverTime: Date.now(),
+    storage: 'd1',
+  }, corsHeaders);
+}
+
+async function listReviewObservations(
+  url: URL,
+  env: Env,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (!env.OBSERVATION_DB) {
+    return json({ observations: [], next_cursor: null, storage: 'not_configured' }, corsHeaders);
+  }
+  const page = await queryObservationRows(env.OBSERVATION_DB, url, {
+    visibility: 'review',
+    defaultStatus: null,
+    allowedStatuses: new Set<ObservationStatus>([
+      'uploaded',
+      'classifying',
+      'candidate_ready',
+      'needs_review',
+      'needs_retake',
+      'classification_failed',
+    ]),
+  });
+  const observations = page.rows.map(rowToApiObservation);
+  return json({
+    observations,
+    next_cursor: page.nextCursor,
+    serverTime: Date.now(),
+    storage: 'd1',
+  }, corsHeaders);
+}
+
+async function getReviewObservation(
+  observationId: string,
+  env: Env,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  if (!env.OBSERVATION_DB) {
+    return json({ error: 'storage_not_configured' }, corsHeaders, 503);
+  }
+  const row = await env.OBSERVATION_DB.prepare(
+    'SELECT * FROM observations WHERE id = ?',
+  ).bind(observationId).first<ObservationRow>();
+  if (!row) {
+    return json({ error: 'not_found' }, corsHeaders, 404);
+  }
+  return json({ observation: rowToApiObservation(row) }, corsHeaders);
+}
+
 async function classifyPersistedObservation(
   env: Env,
   input: ClassificationInput,
@@ -1316,6 +1673,94 @@ async function updateObservationStatus(
   ).bind(status, new Date().toISOString(), observationId).run();
 }
 
+async function queryObservationRows(
+  db: D1Database,
+  url: URL,
+  options: {
+    visibility: 'public' | 'review' | 'internal';
+    defaultStatus: ObservationStatus | null;
+    allowedStatuses: Set<ObservationStatus>;
+  },
+): Promise<{ rows: ObservationRow[]; nextCursor: string | null }> {
+  const limit = normalizeLimit(url.searchParams.get('limit'), 100);
+  const cursor = decodeCursor(url.searchParams.get('cursor'));
+  const filters: string[] = [];
+  const binds: Array<string | number> = [];
+  const status = normalizeStatus(url.searchParams.get('status'));
+  if (status && options.allowedStatuses.has(status)) {
+    filters.push('status = ?');
+    binds.push(status);
+  } else if (options.defaultStatus) {
+    filters.push('status = ?');
+    binds.push(options.defaultStatus);
+  } else if (options.allowedStatuses.size > 0) {
+    const statuses = [...options.allowedStatuses];
+    filters.push(`status IN (${statuses.map(() => '?').join(', ')})`);
+    binds.push(...statuses);
+  }
+
+  const from = normalizeIsoDateParam(url.searchParams.get('from') ?? url.searchParams.get('date_from'));
+  if (from) {
+    filters.push('captured_at >= ?');
+    binds.push(from);
+  }
+  const to = normalizeIsoDateParam(url.searchParams.get('to') ?? url.searchParams.get('date_to'));
+  if (to) {
+    filters.push('captured_at <= ?');
+    binds.push(to);
+  }
+
+  const speciesId = sanitizeId(url.searchParams.get('species_id') ?? '');
+  if (speciesId) {
+    filters.push('confirmed_species_id = ?');
+    binds.push(speciesId);
+  }
+
+  const bbox = parseBbox(url.searchParams.get('bbox'));
+  if (bbox) {
+    const latColumn = options.visibility === 'public' ? 'public_latitude' : 'latitude';
+    const lonColumn = options.visibility === 'public' ? 'public_longitude' : 'longitude';
+    filters.push(`${latColumn} BETWEEN ? AND ?`);
+    binds.push(bbox.minLat, bbox.maxLat);
+    filters.push(`${lonColumn} BETWEEN ? AND ?`);
+    binds.push(bbox.minLon, bbox.maxLon);
+  }
+
+  if (cursor) {
+    filters.push('(updated_at > ? OR (updated_at = ? AND id > ?))');
+    binds.push(cursor.updatedAt, cursor.updatedAt, cursor.id);
+  }
+
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const result = await db.prepare(
+    `SELECT * FROM observations ${where} ORDER BY updated_at ASC, id ASC LIMIT ?`,
+  ).bind(...binds, limit + 1).all<ObservationRow>();
+  const rows = result.results ?? [];
+  const visibleRows = rows.slice(0, limit);
+  return {
+    rows: visibleRows,
+    nextCursor: rows.length > limit ? encodeCursor(visibleRows[visibleRows.length - 1]) : null,
+  };
+}
+
+async function loadSpeciesByIds(
+  db: D1Database,
+  ids: Array<string | null>,
+): Promise<Map<string, SpeciesRow>> {
+  const uniqueIds = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+  const speciesById = new Map<string, SpeciesRow>();
+  if (uniqueIds.length === 0) {
+    return speciesById;
+  }
+  const result = await db.prepare(
+    `SELECT * FROM species WHERE id IN (${uniqueIds.map(() => '?').join(', ')})`,
+  ).bind(...uniqueIds).all<SpeciesRow>();
+  for (const row of result.results ?? []) {
+    speciesById.set(row.id, row);
+  }
+  return speciesById;
+}
+
 function rowToApiObservation(row: ObservationRow) {
   return {
     id: row.id,
@@ -1339,6 +1784,113 @@ function rowToApiObservation(row: ObservationRow) {
     classifier_mode: row.classifier_mode,
     classifier_version: row.classifier_version,
     quality_score: row.quality_score,
+    updated_at: row.updated_at,
+  };
+}
+
+function normalizeLimit(value: string | null, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(1, Math.min(500, Math.floor(parsed)));
+}
+
+function normalizeStatus(value: string | null): ObservationStatus | null {
+  const statuses = new Set<ObservationStatus>([
+    'uploaded',
+    'classifying',
+    'candidate_ready',
+    'needs_review',
+    'needs_retake',
+    'confirmed',
+    'rejected',
+    'classification_failed',
+  ]);
+  return statuses.has(value as ObservationStatus) ? value as ObservationStatus : null;
+}
+
+function normalizeIsoDateParam(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
+}
+
+function parseBbox(value: string | null): {
+  minLon: number;
+  minLat: number;
+  maxLon: number;
+  maxLat: number;
+} | null {
+  if (!value) {
+    return null;
+  }
+  const parts = value.split(',').map((part) => Number(part.trim()));
+  if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part))) {
+    return null;
+  }
+  const [minLon, minLat, maxLon, maxLat] = parts;
+  if (minLat < -90 || maxLat > 90 || minLon < -180 || maxLon > 180 || minLat > maxLat || minLon > maxLon) {
+    return null;
+  }
+  return { minLon, minLat, maxLon, maxLat };
+}
+
+function encodeCursor(row: { updated_at: string; id: string }): string {
+  return btoa(JSON.stringify({ updatedAt: row.updated_at, id: row.id }));
+}
+
+function decodeCursor(value: string | null): { updatedAt: string; id: string } | null {
+  if (!value) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(atob(value)) as { updatedAt?: unknown; id?: unknown };
+    if (typeof parsed.updatedAt !== 'string' || typeof parsed.id !== 'string') {
+      return null;
+    }
+    if (!normalizeIsoDateParam(parsed.updatedAt)) {
+      return null;
+    }
+    return { updatedAt: parsed.updatedAt, id: parsed.id };
+  } catch {
+    return null;
+  }
+}
+
+function rowToPublicObservation(row: ObservationRow, species: SpeciesRow | null = null) {
+  return {
+    id: row.id,
+    captured_at: row.captured_at,
+    received_at: row.received_at,
+    public_latitude: row.public_latitude,
+    public_longitude: row.public_longitude,
+    location_visibility: row.location_visibility,
+    image_url: `/api/v1/public/observations/${row.id}/image`,
+    broad_category: row.broad_category,
+    confirmed_species_id: row.confirmed_species_id,
+    species: species ? rowToPublicSpecies(species) : null,
+    status: row.status,
+    classifier_mode: row.classifier_mode,
+    classifier_version: row.classifier_version,
+    quality_score: row.quality_score,
+    updated_at: row.updated_at,
+  };
+}
+
+function rowToPublicSpecies(row: SpeciesRow) {
+  return {
+    id: row.id,
+    japanese_name: row.japanese_name,
+    scientific_name: row.scientific_name,
+    category: row.category,
+    description: row.description,
+    active_months: safeJson(row.active_months_json, []),
+    habitat_tags: safeJson(row.habitat_tags_json, []),
+    image_url: row.image_url,
+    is_sensitive_location: Boolean(row.is_sensitive_location),
     updated_at: row.updated_at,
   };
 }
@@ -1656,7 +2208,7 @@ function buildCorsHeaders(request: Request, env: Env): HeadersInit {
   const allowedOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0] ?? '*';
   return {
     'access-control-allow-origin': allowedOrigin,
-    'access-control-allow-methods': 'GET,POST,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,PATCH,OPTIONS',
     'access-control-allow-headers': 'content-type,authorization',
     'access-control-max-age': '86400',
   };

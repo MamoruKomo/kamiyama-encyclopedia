@@ -171,6 +171,33 @@ https://mamorukomo.github.io/kamiyama-encyclopedia/?syncEndpoint=https://YOUR_WO
 Web/PWAには `候補` タブがあります。THINKLETから送られた写真はまず候補カードに入り、カードを選んだものだけが `図鑑` と `マップ` に保存されます。
 MVPではログインなしで使うため、候補カードの `confirm` だけは観察IDを知っているWeb/PWAから実行できます。`reject` や `needs_retake` などの管理操作は従来どおり `SYNC_WRITE_TOKEN` が必要です。
 
+### v1 API
+
+Phase 10時点の正式APIです。旧 `/observations` は移行互換として残しています。
+
+公開API:
+
+- `GET /api/v1/public/observations`
+- `GET /api/v1/public/observations/:id`
+- `GET /api/v1/public/observations/:id/image`
+- `GET /api/v1/public/species`
+- `GET /api/v1/public/map`
+
+端末API:
+
+- `POST /api/v1/observations`
+- `GET /api/v1/devices/me/sync-status`
+
+レビューAPI:
+
+- `GET /api/v1/review/observations`
+- `GET /api/v1/review/observations/:id`
+- `POST /api/v1/review/observations/:id/confirm`
+- `POST /api/v1/review/observations/:id/reject`
+- `POST /api/v1/review/observations/:id/reclassify`
+
+一覧APIは `cursor`, `limit`, `status`, `from`, `to`, `species_id`, `bbox=minLon,minLat,maxLon,maxLat` に対応しています。公開APIは `confirmed` だけを返し、正確な `latitude` / `longitude` / `device_id` は返さず、丸めた `public_latitude` / `public_longitude` だけを返します。
+
 ## Android Studio版アプリ
 
 スマホ本体で動かすネイティブAndroidアプリは `field-android/` にあります。Android Studioでは、リポジトリ直下ではなく `field-android/` フォルダを開いてください。
