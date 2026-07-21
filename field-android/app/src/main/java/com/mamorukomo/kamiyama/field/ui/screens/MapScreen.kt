@@ -6,6 +6,11 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.drawable.BitmapDrawable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -29,8 +34,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.LocationOff
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.MyLocation
@@ -44,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,7 +71,9 @@ import com.mamorukomo.kamiyama.field.data.KamiyamaCenter
 import com.mamorukomo.kamiyama.field.data.LatLng
 import com.mamorukomo.kamiyama.field.data.Observation
 import com.mamorukomo.kamiyama.field.data.SpeciesCandidates
+import com.mamorukomo.kamiyama.field.data.SpeciesCandidate
 import com.mamorukomo.kamiyama.field.data.SpeciesCategory
+import com.mamorukomo.kamiyama.field.ui.CandidateImage
 import com.mamorukomo.kamiyama.field.ui.FieldForest
 import com.mamorukomo.kamiyama.field.ui.FieldGreen
 import com.mamorukomo.kamiyama.field.ui.FieldGreenSoft
@@ -73,9 +83,11 @@ import com.mamorukomo.kamiyama.field.ui.FieldPanelAlt
 import com.mamorukomo.kamiyama.field.ui.FieldSky
 import com.mamorukomo.kamiyama.field.ui.FieldTextMuted
 import com.mamorukomo.kamiyama.field.ui.ObservationImage
+import com.mamorukomo.kamiyama.field.ui.RarityPill
 import com.mamorukomo.kamiyama.field.ui.accentColor
 import com.mamorukomo.kamiyama.field.ui.formatDate
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
@@ -102,6 +114,8 @@ internal fun MapScreen(
     var activeFilter by remember { mutableStateOf(MapCategoryFilter.All) }
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var visibleBounds by remember { mutableStateOf<MapBounds?>(null) }
+    var focusedItem by remember { mutableStateOf<MapFocus?>(null) }
+    var actionFeedback by remember { mutableStateOf<String?>(null) }
     val sheetState = rememberBottomSheetScaffoldState()
     val scope = rememberCoroutineScope()
     val filteredObservations = observations.filter(activeFilter::matches)
@@ -110,10 +124,37 @@ internal fun MapScreen(
     }
     val filteredCandidates = SpeciesCandidates.filter { activeFilter.matches(it.category) }
 
+    fun focusMapAt(point: LatLng) {
+        val map = mapView ?: return
+        map.controller.animateTo(GeoPoint(point.latitude, point.longitude))
+        scope.launch {
+            delay(320)
+            map.controller.scrollBy(0, (map.height * 0.28f).roundToInt())
+        }
+    }
+
     fun selectObservation(observation: Observation) {
+        focusedItem = MapFocus.ObservationItem(observation)
         onObservationSelected(observation)
-        mapView?.controller?.animateTo(GeoPoint(observation.latitude, observation.longitude))
+        focusMapAt(LatLng(observation.latitude, observation.longitude))
         scope.launch { sheetState.bottomSheetState.expand() }
+    }
+
+    fun selectCandidate(candidate: SpeciesCandidate, point: LatLng) {
+        focusedItem = MapFocus.CandidateItem(candidate, point)
+        focusMapAt(point)
+        scope.launch { sheetState.bottomSheetState.expand() }
+    }
+
+    LaunchedEffect(selectedObservation?.id) {
+        selectedObservation?.let { focusedItem = MapFocus.ObservationItem(it) }
+    }
+
+    LaunchedEffect(actionFeedback) {
+        if (actionFeedback != null) {
+            delay(1400)
+            actionFeedback = null
+        }
     }
 
     Column(
@@ -136,6 +177,7 @@ internal fun MapScreen(
                 DiscoverySheet(
                     observations = visibleObservations,
                     selectedObservation = selectedObservation,
+                    focusedItem = focusedItem,
                     expanded = sheetState.bottomSheetState.currentValue == SheetValue.Expanded,
                     onHeaderClick = {
                         scope.launch {
@@ -147,6 +189,7 @@ internal fun MapScreen(
                         }
                     },
                     onObservationClick = ::selectObservation,
+                    onClearFocus = { focusedItem = null },
                 )
             },
         ) { contentPadding ->
@@ -159,15 +202,21 @@ internal fun MapScreen(
                     modifier = Modifier.fillMaxSize(),
                     observations = filteredObservations,
                     candidates = filteredCandidates,
+                    focusedItem = focusedItem,
                     currentPoint = currentPoint,
                     showCurrentLocation = locationStatus == LocationStatus.Available,
                     onMapReady = { mapView = it },
                     onVisibleBoundsChanged = { visibleBounds = it },
                     onObservationSelected = ::selectObservation,
+                    onCandidateSelected = ::selectCandidate,
                 )
                 CategoryFilters(
                     selected = activeFilter,
-                    onSelected = { activeFilter = it },
+                    onSelected = {
+                        activeFilter = it
+                        focusedItem = null
+                        scope.launch { sheetState.bottomSheetState.partialExpand() }
+                    },
                     modifier = Modifier.align(Alignment.TopStart),
                 )
                 LocationStatusPill(
@@ -189,6 +238,7 @@ internal fun MapScreen(
                         onClick = {
                             mapView?.controller?.animateTo(GeoPoint(currentPoint.latitude, currentPoint.longitude))
                             mapView?.controller?.setZoom(15.0)
+                            actionFeedback = "現在地へ移動しました"
                         },
                     )
                     MapActionButton(
@@ -197,9 +247,16 @@ internal fun MapScreen(
                         onClick = {
                             mapView?.controller?.animateTo(GeoPoint(KamiyamaCenter.latitude, KamiyamaCenter.longitude))
                             mapView?.controller?.setZoom(InitialZoom)
+                            actionFeedback = "神山の中心へ戻りました"
                         },
                     )
                 }
+                MapActionFeedback(
+                    message = actionFeedback,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 76.dp, bottom = SheetPeekHeight + 28.dp),
+                )
             }
         }
     }
@@ -318,19 +375,49 @@ private fun MapActionButton(
 }
 
 @Composable
+private fun MapActionFeedback(message: String?, modifier: Modifier = Modifier) {
+    AnimatedVisibility(
+        visible = message != null,
+        modifier = modifier,
+        enter = fadeIn() + slideInHorizontally(initialOffsetX = { it / 3 }),
+        exit = fadeOut() + slideOutHorizontally(targetOffsetX = { it / 3 }),
+    ) {
+        Surface(
+            color = FieldForest,
+            contentColor = Color.White,
+            shape = CircleShape,
+            shadowElevation = 4.dp,
+        ) {
+            Text(
+                text = message.orEmpty(),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@Composable
 private fun DiscoverySheet(
     observations: List<Observation>,
     selectedObservation: Observation?,
+    focusedItem: MapFocus?,
     expanded: Boolean,
     onHeaderClick: () -> Unit,
     onObservationClick: (Observation) -> Unit,
+    onClearFocus: () -> Unit,
 ) {
+    val focusTint = focusedItem?.category?.accentColor()
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = SheetPeekHeight, max = 520.dp),
     ) {
-        Surface(onClick = onHeaderClick, color = FieldPanel) {
+        Surface(
+            onClick = onHeaderClick,
+            color = focusTint?.copy(alpha = 0.10f) ?: FieldPanel,
+        ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Box(
                     modifier = Modifier
@@ -347,35 +434,208 @@ private fun DiscoverySheet(
                         .padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("この範囲の発見", color = FieldInk, fontWeight = FontWeight.ExtraBold)
-                        Text("${observations.size}件", color = FieldTextMuted, style = MaterialTheme.typography.bodySmall)
+                    if (focusedItem != null) {
+                        Surface(color = focusTint ?: FieldGreen, shape = CircleShape) {
+                            Icon(
+                                Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.padding(8.dp).size(19.dp),
+                                tint = Color.White,
+                            )
+                        }
                     }
-                    Icon(
-                        imageVector = if (expanded) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
-                        contentDescription = if (expanded) "発見一覧を閉じる" else "発見一覧を開く",
-                        tint = FieldGreen,
-                    )
+                    Column(
+                        modifier = Modifier.padding(start = if (focusedItem != null) 10.dp else 0.dp).weight(1f),
+                    ) {
+                        Text(
+                            text = focusedItem?.headline ?: "この範囲の発見",
+                            color = FieldInk,
+                            fontWeight = FontWeight.ExtraBold,
+                        )
+                        Text(
+                            text = focusedItem?.name ?: "${observations.size}件",
+                            color = FieldTextMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (focusedItem != null) {
+                        Surface(
+                            onClick = onClearFocus,
+                            modifier = Modifier.size(44.dp),
+                            color = Color.White.copy(alpha = 0.76f),
+                            contentColor = FieldTextMuted,
+                            shape = CircleShape,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.Close, contentDescription = "選択を閉じる")
+                            }
+                        }
+                    } else {
+                        Icon(
+                            imageVector = if (expanded) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
+                            contentDescription = if (expanded) "発見一覧を閉じる" else "発見一覧を開く",
+                            tint = FieldGreen,
+                        )
+                    }
                 }
             }
         }
-        if (observations.isEmpty()) {
-            EmptyDiscoveryState()
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+        when (focusedItem) {
+            is MapFocus.ObservationItem -> ObservationFocusCard(focusedItem.observation)
+            is MapFocus.CandidateItem -> CandidateFocusCard(focusedItem.candidate)
+            null -> {
+                if (observations.isEmpty()) {
+                    EmptyDiscoveryState()
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(observations, key = { it.id }) { observation ->
+                            ObservationMapCard(
+                                observation = observation,
+                                selected = observation.id == selectedObservation?.id,
+                                onClick = { onObservationClick(observation) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ObservationFocusCard(observation: Observation) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ObservationImage(observation.photoUri, Modifier.size(116.dp))
+            Column(
+                modifier = Modifier.padding(start = 14.dp).weight(1f),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
             ) {
-                items(observations, key = { it.id }) { observation ->
-                    ObservationMapCard(
-                        observation = observation,
-                        selected = observation.id == selectedObservation?.id,
-                        onClick = { onObservationClick(observation) },
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    CategoryBadge(observation.category)
+                    RarityPill(observation.rarity)
                 }
+                Text(
+                    observation.customName,
+                    color = FieldInk,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    formatDate(observation.observedAtMillis),
+                    color = FieldTextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
+        Surface(
+            color = observation.category.accentColor().copy(alpha = 0.09f),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(13.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text("見つけた場所", color = FieldInk, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold)
+                Text(
+                    observation.environment.ifBlank { "撮影場所の記録なし" },
+                    color = FieldTextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    observation.aiConfidence?.let { "AI判定の信頼度 ${(it * 100).roundToInt()}%" }
+                        ?: "AI判定の信頼度は記録されていません",
+                    color = observation.category.accentColor(),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CandidateFocusCard(candidate: SpeciesCandidate) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CandidateImage(
+                candidateId = candidate.id,
+                modifier = Modifier.size(116.dp),
+                category = candidate.category,
+            )
+            Column(
+                modifier = Modifier.padding(start = 14.dp).weight(1f),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    CategoryBadge(candidate.category)
+                    RarityPill(candidate.rarity)
+                }
+                Text(
+                    candidate.commonName,
+                    color = FieldInk,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    candidate.scientificName,
+                    color = FieldTextMuted,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Surface(
+            color = candidate.category.accentColor().copy(alpha = 0.09f),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(13.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text("探すヒント", color = FieldInk, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold)
+                Text(candidate.hint, color = FieldTextMuted, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "観察根拠: GBIF / 神山周辺",
+                    color = candidate.category.accentColor(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryBadge(category: SpeciesCategory) {
+    Surface(
+        color = category.accentColor().copy(alpha = 0.14f),
+        contentColor = category.accentColor(),
+        shape = CircleShape,
+    ) {
+        Text(
+            category.label,
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.ExtraBold,
+        )
     }
 }
 
@@ -472,12 +732,14 @@ private fun ObservationMapCard(
 private fun FieldMap(
     modifier: Modifier,
     observations: List<Observation>,
-    candidates: List<com.mamorukomo.kamiyama.field.data.SpeciesCandidate>,
+    candidates: List<SpeciesCandidate>,
+    focusedItem: MapFocus?,
     currentPoint: LatLng,
     showCurrentLocation: Boolean,
     onMapReady: (MapView) -> Unit,
     onVisibleBoundsChanged: (MapBounds) -> Unit,
     onObservationSelected: (Observation) -> Unit,
+    onCandidateSelected: (SpeciesCandidate, LatLng) -> Unit,
 ) {
     val currentBoundsCallback by rememberUpdatedState(onVisibleBoundsChanged)
     var createdMap by remember { mutableStateOf<MapView?>(null) }
@@ -516,9 +778,16 @@ private fun FieldMap(
                         Marker(map).apply {
                             position = GeoPoint(location.latitude, location.longitude)
                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                            icon = map.context.categoryPinIcon(candidate.category)
+                            icon = map.context.categoryPinIcon(
+                                category = candidate.category,
+                                selected = (focusedItem as? MapFocus.CandidateItem)?.candidate?.id == candidate.id,
+                            )
                             title = candidate.commonName
                             snippet = "GBIF記録 / ${candidate.rarity.label}"
+                            setOnMarkerClickListener { _, _ ->
+                                onCandidateSelected(candidate, location)
+                                true
+                            }
                         },
                     )
                 }
@@ -529,11 +798,13 @@ private fun FieldMap(
                     Marker(map).apply {
                         position = GeoPoint(observation.latitude, observation.longitude)
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                        icon = map.context.categoryPinIcon(observation.category)
+                        icon = map.context.categoryPinIcon(
+                            category = observation.category,
+                            selected = (focusedItem as? MapFocus.ObservationItem)?.observation?.id == observation.id,
+                        )
                         title = observation.customName
                         snippet = "${observation.rarity.label} / ${observation.environment}"
-                        setOnMarkerClickListener { clicked, _ ->
-                            clicked.showInfoWindow()
+                        setOnMarkerClickListener { _, _ ->
                             onObservationSelected(observation)
                             true
                         }
@@ -557,6 +828,27 @@ private fun FieldMap(
     DisposableEffect(createdMap) {
         createdMap?.onResume()
         onDispose { createdMap?.onPause() }
+    }
+}
+
+private sealed interface MapFocus {
+    val category: SpeciesCategory
+    val headline: String
+    val name: String
+
+    data class ObservationItem(val observation: Observation) : MapFocus {
+        override val category: SpeciesCategory = observation.category
+        override val headline: String = "発見した！"
+        override val name: String = observation.customName
+    }
+
+    data class CandidateItem(
+        val candidate: SpeciesCandidate,
+        val point: LatLng,
+    ) : MapFocus {
+        override val category: SpeciesCategory = candidate.category
+        override val headline: String = "この近くにいるかも"
+        override val name: String = candidate.commonName
     }
 }
 
@@ -590,10 +882,26 @@ private fun BoundingBox.toMapBounds(): MapBounds {
     return MapBounds(latNorth, lonEast, latSouth, lonWest)
 }
 
-private fun android.content.Context.categoryPinIcon(category: SpeciesCategory): BitmapDrawable {
-    val bitmap = Bitmap.createBitmap(72, 92, Bitmap.Config.ARGB_8888)
+private fun android.content.Context.categoryPinIcon(
+    category: SpeciesCategory,
+    selected: Boolean,
+): BitmapDrawable {
+    val inset = if (selected) 6f else 0f
+    val bitmap = Bitmap.createBitmap(
+        if (selected) 84 else 72,
+        if (selected) 104 else 92,
+        Bitmap.Config.ARGB_8888,
+    )
     val canvas = Canvas(bitmap)
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = category.accentColor().toArgbInt() }
+    canvas.translate(inset, inset)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    if (selected) {
+        paint.color = android.graphics.Color.WHITE
+        paint.setShadowLayer(5f, 0f, 2f, android.graphics.Color.argb(80, 0, 0, 0))
+        canvas.drawCircle(36f, 32f, 33f, paint)
+        paint.clearShadowLayer()
+    }
+    paint.color = category.accentColor().toArgbInt()
     canvas.drawCircle(36f, 32f, 28f, paint)
     canvas.drawPath(
         Path().apply {
