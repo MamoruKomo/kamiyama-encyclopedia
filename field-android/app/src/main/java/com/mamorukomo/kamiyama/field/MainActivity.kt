@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("MissingPermission")
     private suspend fun currentLocation(): LocationFix {
         if (!hasLocationPermission()) {
-            return LocationFix(KamiyamaCenter, null)
+            return LocationFix(KamiyamaCenter, null, LocationStatus.PermissionDenied)
         }
 
         val manager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -56,9 +56,10 @@ class MainActivity : ComponentActivity() {
             LocationFix(
                 point = LatLng(location.latitude, location.longitude),
                 accuracy = location.accuracy.takeIf { location.hasAccuracy() },
+                status = LocationStatus.Available,
             )
         } else {
-            LocationFix(KamiyamaCenter, null)
+            LocationFix(KamiyamaCenter, null, LocationStatus.Unavailable)
         }
     }
 
@@ -113,4 +114,12 @@ class MainActivity : ComponentActivity() {
 data class LocationFix(
     val point: LatLng,
     val accuracy: Float?,
+    val status: LocationStatus,
 )
+
+enum class LocationStatus {
+    Loading,
+    Available,
+    PermissionDenied,
+    Unavailable,
+}

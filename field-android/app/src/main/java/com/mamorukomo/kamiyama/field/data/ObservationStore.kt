@@ -23,15 +23,17 @@ class ObservationStore(context: Context) :
                 accuracy REAL,
                 observed_at_millis INTEGER NOT NULL,
                 environment TEXT NOT NULL,
-                rarity TEXT NOT NULL
+                rarity TEXT NOT NULL,
+                ai_confidence REAL
             )
             """.trimIndent(),
         )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS observations")
-        onCreate(db)
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE observations ADD COLUMN ai_confidence REAL")
+        }
     }
 
     fun loadObservations(): List<Observation> {
@@ -61,6 +63,7 @@ class ObservationStore(context: Context) :
                             observedAtMillis = cursor.getLong(cursor.getColumnIndexOrThrow("observed_at_millis")),
                             environment = cursor.getString(cursor.getColumnIndexOrThrow("environment")),
                             rarity = cursor.getString(cursor.getColumnIndexOrThrow("rarity")).toRarity(),
+                            aiConfidence = cursor.getDoubleOrNull("ai_confidence"),
                         ),
                     )
                 }
@@ -82,6 +85,7 @@ class ObservationStore(context: Context) :
             put("observed_at_millis", observation.observedAtMillis)
             put("environment", observation.environment)
             put("rarity", observation.rarity.name)
+            put("ai_confidence", observation.aiConfidence)
         }
         writableDatabase.insertWithOnConflict(
             "observations",
@@ -113,8 +117,13 @@ class ObservationStore(context: Context) :
         return if (isNull(index)) null else getFloat(index)
     }
 
+    private fun android.database.Cursor.getDoubleOrNull(columnName: String): Double? {
+        val index = getColumnIndexOrThrow(columnName)
+        return if (isNull(index)) null else getDouble(index)
+    }
+
     companion object {
         private const val DATABASE_NAME = "kamiyama-field-guide.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
     }
 }

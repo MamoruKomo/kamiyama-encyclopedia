@@ -121,6 +121,7 @@ class SyncClient(private val endpoint: String) {
             observedAtMillis = observedAt,
             environment = describeEnvironment(point),
             rarity = candidate.rarity,
+            aiConfidence = null,
         )
     }
 
@@ -148,6 +149,8 @@ class SyncClient(private val endpoint: String) {
         val category = when (analysis.optText("category")) {
             "insect" -> SpeciesCategory.Insect
             "plant" -> SpeciesCategory.Plant
+            "bird" -> SpeciesCategory.Bird
+            "mushroom", "fungus", "fungi" -> SpeciesCategory.Mushroom
             else -> return null
         }
         val label = analysis.optText("commonName")
@@ -180,6 +183,7 @@ class SyncClient(private val endpoint: String) {
             observedAtMillis = observedAt,
             environment = describeEnvironment(point),
             rarity = rarity,
+            aiConfidence = analysis.optDoubleOrNull("confidence")?.coerceIn(0.0, 1.0),
         )
     }
 
@@ -267,7 +271,12 @@ class SyncClient(private val endpoint: String) {
     }
 
     private fun buildPhotoPlaceholder(label: String, category: SpeciesCategory): String {
-        val color = if (category == SpeciesCategory.Insect) "#8f5e2f" else "#668f3b"
+        val color = when (category) {
+            SpeciesCategory.Plant -> "#668f3b"
+            SpeciesCategory.Insect -> "#8f5e2f"
+            SpeciesCategory.Bird -> "#3a82a8"
+            SpeciesCategory.Mushroom -> "#8a5f6d"
+        }
         val escaped = label.take(18)
             .replace("&", "&amp;")
             .replace("<", "&lt;")

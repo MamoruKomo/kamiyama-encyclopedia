@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import com.mamorukomo.kamiyama.field.BuildConfig
 import com.mamorukomo.kamiyama.field.LocationFix
+import com.mamorukomo.kamiyama.field.LocationStatus
 import com.mamorukomo.kamiyama.field.data.LatLng
 import com.mamorukomo.kamiyama.field.data.Observation
 import com.mamorukomo.kamiyama.field.data.ObservationStore
@@ -61,6 +62,7 @@ fun KamiyamaFieldApp(
         var activeTab by remember { mutableStateOf(AppTab.Home) }
         var selectedObservation by remember { mutableStateOf<Observation?>(null) }
         var currentPoint by remember { mutableStateOf(LatLng(33.9676, 134.3503)) }
+        var locationStatus by remember { mutableStateOf(LocationStatus.Loading) }
         var isSyncing by remember { mutableStateOf(false) }
         val syncClient = remember { SyncClient(BuildConfig.SYNC_API_URL.trim()) }
         val syncPrefs = remember(context) {
@@ -114,16 +116,22 @@ fun KamiyamaFieldApp(
 
         LaunchedEffect(Unit) {
             runCatching { currentLocation() }
-                .onSuccess { fix -> currentPoint = fix.point }
+                .onSuccess { fix ->
+                    currentPoint = fix.point
+                    locationStatus = fix.status
+                }
+                .onFailure { locationStatus = LocationStatus.Unavailable }
         }
 
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Scaffold(
                 topBar = {
-                    FieldHeader(
-                        observations = observations,
-                        activeTab = activeTab,
-                    )
+                    if (activeTab != AppTab.Map) {
+                        FieldHeader(
+                            observations = observations,
+                            activeTab = activeTab,
+                        )
+                    }
                 },
                 bottomBar = {
                     FieldBottomBar(activeTab = activeTab, onTabSelected = { activeTab = it })
@@ -147,6 +155,7 @@ fun KamiyamaFieldApp(
                         padding = padding,
                         observations = observations,
                         currentPoint = currentPoint,
+                        locationStatus = locationStatus,
                         selectedObservation = selectedObservation,
                         onObservationSelected = {
                             selectedObservation = it

@@ -26,6 +26,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Eco
+import androidx.compose.material.icons.rounded.FlutterDash
+import androidx.compose.material.icons.rounded.Grass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -338,7 +340,12 @@ internal fun CandidateImage(
             )
         } else {
             Icon(
-                imageVector = if (category == SpeciesCategory.Insect) Icons.Rounded.BugReport else Icons.Rounded.Eco,
+                imageVector = when (category) {
+                    SpeciesCategory.Insect -> Icons.Rounded.BugReport
+                    SpeciesCategory.Bird -> Icons.Rounded.FlutterDash
+                    SpeciesCategory.Mushroom -> Icons.Rounded.Grass
+                    else -> Icons.Rounded.Eco
+                },
                 contentDescription = null,
                 modifier = Modifier.size(34.dp),
                 tint = category?.accentColor() ?: FieldGreen,
@@ -360,5 +367,7 @@ internal fun SpeciesCategory.accentColor(): Color {
     return when (this) {
         SpeciesCategory.Plant -> FieldGreen
         SpeciesCategory.Insect -> FieldYellow
+        SpeciesCategory.Bird -> FieldSky
+        SpeciesCategory.Mushroom -> FieldBerry
     }
 }

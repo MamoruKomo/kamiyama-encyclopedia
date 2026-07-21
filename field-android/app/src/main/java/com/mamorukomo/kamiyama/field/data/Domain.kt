@@ -3,6 +3,8 @@ package com.mamorukomo.kamiyama.field.data
 enum class SpeciesCategory(val label: String, val chip: String) {
     Plant("植物", "PLANT"),
     Insect("虫", "INSECT"),
+    Bird("鳥", "BIRD"),
+    Mushroom("きのこ", "MUSHROOM"),
 }
 
 enum class Rarity(val label: String, val score: Int) {
@@ -59,6 +61,7 @@ data class Observation(
     val observedAtMillis: Long,
     val environment: String,
     val rarity: Rarity,
+    val aiConfidence: Double?,
 )
 
 data class Suggestion(
