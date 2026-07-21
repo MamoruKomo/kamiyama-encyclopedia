@@ -114,11 +114,11 @@ If no permission or no enabled provider exists, latitude/longitude are sent as n
 
 ### Offline Queue
 
-No durable offline upload queue was found. A failed upload only updates UI state and plays an error tone. The latest payload remains in memory and can be manually resent while the app process remains alive, but it is not persisted as a retry queue.
+Failed uploads are serialized with their compressed photo into app-private `SharedPreferences`. After a later upload succeeds, the app flushes the persisted queue and retains only entries that still fail. Real-device airplane-mode persistence and process-restart behavior have not yet been verified.
 
 ### Duplicate Upload Prevention
 
-The THINKLET payload id is currently generated as `thinklet-${observedAt}`. There is no persistent client-side sent-state table. Re-sending the same in-memory payload uses the same id, but a new capture creates a new id.
+The THINKLET payload uses a UUID-based `client_observation_id` per capture and sends a stable Android-ID-based `device_id`. Failed uploads are retained in a local pending queue, and retries reuse the same client observation id.
 
 ## Cloudflare Worker
 
@@ -438,16 +438,17 @@ Verification completed:
 - `sync-worker`: Production `GET /api/v1/admin/metrics` returns 401 without a bearer token and returns status/device counters with a valid token.
 - `sync-worker`: 2026-07-21 D1 migration `0002_sync_metrics.sql` applied to local and remote D1. Later Worker deploy version: `1c6ef66c-4ad4-4664-ba1a-e8046732e162`.
 - `sync-worker`: Production duplicate-send smoke created one duplicate upload, confirmed `duplicate_send_count` incremented to `1`, then removed the smoke observation row and KV image. The duplicate counter is intentionally retained as an aggregate.
-- Android SDK: `npm run android:doctor` confirms both Android projects point to `/Users/mamoru/Library/Android/sdk`, but that path is missing `platforms` or `platform-tools`.
+- Android SDK: installed at `/Users/mamoru/Library/Android/sdk` on 2026-07-21 with API 36, Build Tools, and Platform Tools.
+- THINKLET Android: `./gradlew assembleDebug` succeeded, the latest APK was installed on a connected `THINKLET_LC01`, and camera-key capture completed photo save, ML Kit labeling, location fallback, and Worker sync.
+- field-android: `./gradlew assembleDebug` succeeded after fixing the legacy sync fallback return value.
 - Web/PWA: `npm run typecheck`
 - Web/PWA: `npm run build`
 
 Verification not completed:
 
-- THINKLET Android build: blocked because `thinklet-android/local.properties` points to a missing Android SDK path.
-- field-android build: same SDK availability issue applies.
 - Real Cloudflare R2 deploy: blocked until R2 is enabled in the Cloudflare Dashboard.
-- Real THINKLET device capture/upload test.
+- Outdoor THINKLET GNSS fix test. The indoor test had all providers enabled but timed out with no last-known fix, then uploaded successfully without coordinates.
+- THINKLET offline queue, retry, and rapid-button suppression tests.
 - Full Phase 12 Android/Web test automation is not implemented yet.
 
 ## Remaining Gaps Against Target Architecture
@@ -458,5 +459,5 @@ Verification not completed:
 4. Old KV `/observations` compatibility remains intentionally active.
 5. Old KV observation records have not been migrated yet; only the dry-run helper exists.
 6. Classification runs in `ctx.waitUntil`, not a durable queue. A production retry queue would be safer for long-running AI work.
-7. Android builds and real THINKLET testing are blocked until the local Android SDK path is fixed.
-8. Phase 12 currently covers Worker API behavior first; THINKLET button/queue tests and Web UI tests still need dedicated harnesses.
+7. THINKLET capture/upload works on the connected device, but outdoor GNSS and offline queue/retry behavior still need real-device verification.
+8. Phase 12 currently covers Worker API behavior first; repeatable THINKLET and Web UI test harnesses are still missing.

@@ -275,7 +275,7 @@ Exit criteria:
 
 ## Phase 6: THINKLET Client Migration
 
-Status: implemented in code. Android build/device verification is blocked by missing local Android SDK path. `npm run android:doctor` documents the SDK issue.
+Status: implemented, debug build verified, and capture/upload verified on a connected `THINKLET_LC01` on 2026-07-21. Outdoor GNSS and offline retry scenarios remain.
 
 Goal:
 
@@ -335,7 +335,7 @@ Exit criteria:
 
 ## Phase 8: field-android Compatibility Update
 
-Status: implemented in code. Android build/device verification is blocked by missing local Android SDK path. `npm run android:doctor` documents the SDK issue.
+Status: implemented and debug build verified on 2026-07-21. The legacy sync fallback compile error was fixed during verification.
 
 Goal:
 
@@ -541,13 +541,18 @@ Remaining Worker tests:
 
 Remaining THINKLET tests:
 
-- Button one-shot capture.
 - Rapid press suppression.
-- Location missing but photo saved.
 - ML Kit failure still saves/sends.
 - Offline queue persistence.
 - Retry uses the same `client_observation_id`.
 - Local file is retained until successful upload.
+
+Manually verified on `THINKLET_LC01` on 2026-07-21:
+
+- Camera/side-button key triggers one capture and upload.
+- Photo remains saved when GPS and network location both time out.
+- Location-free observation reaches the Worker successfully.
+- An undetermined observation does not appear in the confirmed public dex.
 
 Remaining Web tests:
 
@@ -569,5 +574,4 @@ Deferred until:
 
 - R2 is enabled in the Cloudflare account.
 - Historical KV migration has been dry-run and then run safely.
-- THINKLET and `field-android` debug APKs build on a local Android SDK.
 - Device checks confirm both Android apps still work.

@@ -49,24 +49,24 @@ class SyncClient(private val endpoint: String) {
     }
 
     private fun pullLegacyObservations(sinceMillis: Long): SyncResult {
-            val query = if (sinceMillis > 0L) "?since=$sinceMillis" else ""
-            val connection = (URL("${endpoint.trimEnd('/')}/observations$query").openConnection() as HttpURLConnection)
-                .apply {
-                    requestMethod = "GET"
-                    connectTimeout = 10000
-                    readTimeout = 15000
-                }
-            try {
-                val status = connection.responseCode
-                if (status !in 200..299) {
-                    val error = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                    throw IllegalStateException("HTTP $status $error")
-                }
-                val raw = connection.inputStream.bufferedReader().use { it.readText() }
-                parseObservations(raw)
-            } finally {
-                connection.disconnect()
+        val query = if (sinceMillis > 0L) "?since=$sinceMillis" else ""
+        val connection = (URL("${endpoint.trimEnd('/')}/observations$query").openConnection() as HttpURLConnection)
+            .apply {
+                requestMethod = "GET"
+                connectTimeout = 10000
+                readTimeout = 15000
             }
+        try {
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                val error = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                throw IllegalStateException("HTTP $status $error")
+            }
+            val raw = connection.inputStream.bufferedReader().use { it.readText() }
+            return parseObservations(raw)
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun parseV1Observations(raw: String): SyncResult {
