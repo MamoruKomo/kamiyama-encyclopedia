@@ -1,135 +1,203 @@
+.map-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#root [tabindex="0"]:focus {
+  outline: none;
+}
+
+#root [tabindex="0"]:focus-visible {
+  outline: 2px solid #5e8b58;
+  outline-offset: -2px;
+}
+
+.map-filter-row {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.map-filter-row::-webkit-scrollbar {
+  display: none;
+}
+
+.map-filter-row button {
+  min-height: 36px;
+  flex: 0 0 auto;
+  padding: 0 16px;
+  border: 1px solid #dde5dc;
+  border-radius: 18px;
+  background: #fff;
+  color: #496157;
+  font: 800 12px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.map-filter-row button.active {
+  border-color: #2f6b45;
+  background: #2f6b45;
+  color: #fff;
+}
+
+.map-filter-row > span {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: #496157;
+  font: 700 11px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
 .map-shell {
-  width: 100%;
-  height: min(58vh, 560px);
-  min-height: 410px;
-  overflow: hidden;
-  border: 2px solid #173149;
-  border-radius: 8px;
-  background: #102233;
-  box-shadow: 0 14px 34px rgba(16, 34, 51, 0.22);
   position: relative;
-}
-
-.map-shell::before,
-.map-shell::after {
-  content: "";
-  position: absolute;
-  pointer-events: none;
-  z-index: 460;
-}
-
-.map-shell::before {
-  inset: 14px;
-  border: 1px solid rgba(255, 210, 74, 0.42);
+  width: 100%;
+  min-height: 430px;
+  flex: 1;
+  overflow: hidden;
+  border: 1px solid #c9d5c9;
   border-radius: 8px;
-  box-shadow: inset 0 0 0 1px rgba(25, 63, 88, 0.32);
-}
-
-.map-shell::after {
-  left: 50%;
-  top: 50%;
-  width: 74px;
-  height: 74px;
-  margin-left: -37px;
-  margin-top: -37px;
-  border: 1px solid rgba(255, 210, 74, 0.28);
-  border-radius: 999px;
-  box-shadow: 0 0 0 34px rgba(47, 176, 136, 0.06);
+  background: #e9f0e6;
+  box-shadow: 0 8px 22px rgba(28, 58, 42, 0.12);
 }
 
 .kamiyama-map {
   width: 100%;
   height: 100%;
+  min-height: 430px;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-.observation-pin {
+.observation-pin,
+.known-pin {
   position: relative;
   display: grid;
   place-items: center;
 }
 
-.observation-pin span,
-.current-pin span {
-  display: block;
-  width: 22px;
-  height: 22px;
-  border: 3px solid #ffffff;
-  border-radius: 50%;
-  box-shadow: 0 4px 12px rgba(20, 35, 26, 0.35);
-}
-
-.observation-pin span {
-  width: 24px;
-  height: 24px;
-  box-shadow:
-    0 0 0 5px rgba(255, 255, 255, 0.44),
-    0 7px 18px rgba(16, 34, 51, 0.42);
-}
-
-.observation-pin b {
-  position: absolute;
-  width: 36px;
-  height: 36px;
-  border: 2px solid rgba(255, 255, 255, 0.7);
-  border-radius: 999px;
-}
-
-.observation-rare b,
-.observation-special b {
-  border-color: rgba(255, 210, 74, 0.92);
-  box-shadow: 0 0 18px rgba(255, 210, 74, 0.62);
-}
-
-.observation-special span {
-  box-shadow:
-    0 0 0 5px rgba(255, 210, 74, 0.55),
-    0 0 20px rgba(224, 90, 71, 0.68),
-    0 8px 18px rgba(16, 34, 51, 0.46);
-}
-
-.current-pin span {
-  width: 18px;
-  height: 18px;
-  background: #1d8df0;
-  outline: 7px solid rgba(29, 141, 240, 0.2);
-  box-shadow: 0 0 0 2px #ffffff, 0 0 22px rgba(29, 141, 240, 0.62);
-}
-
-.known-pin {
+.observation-pin > span,
+.known-pin > span {
   display: grid;
   place-items: center;
-  border: 2px solid rgba(255, 255, 255, 0.92);
-  border-radius: 999px;
-  color: #ffffff;
-  font-size: 12px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  box-shadow: 0 5px 14px rgba(28, 58, 42, 0.28);
+}
+
+.observation-pin > span {
+  width: 34px;
+  height: 34px;
+  border: 3px solid #fff;
+  border-radius: 18px 18px 18px 4px;
+  transform: rotate(-45deg);
+}
+
+.observation-pin > span i,
+.known-pin > span i {
+  color: #fff;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 900;
+  transform: rotate(45deg);
+}
+
+.observation-pin > b {
+  position: absolute;
+  bottom: 3px;
+  width: 10px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(23, 56, 43, 0.2);
+  filter: blur(1px);
+}
+
+.observation-rare > span,
+.observation-special > span {
+  box-shadow: 0 0 0 4px rgba(242, 166, 43, 0.24), 0 5px 14px rgba(28, 58, 42, 0.3);
+}
+
+.known-pin > span {
+  width: 28px;
+  height: 28px;
+  border: 2px solid #fff;
+  border-radius: 50% 50% 50% 4px;
+  transform: rotate(-45deg);
+  opacity: 0.88;
+}
+
+.known-pin.plant > span { background: #6e9a67; }
+.known-pin.insect > span { background: #b68148; }
+
+.current-pin span {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: #4d85c5;
+  outline: 7px solid rgba(77, 133, 197, 0.22);
+  box-shadow: 0 2px 8px rgba(31, 74, 120, 0.35);
+}
+
+.map-legend {
+  position: absolute;
+  z-index: 500;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(201, 213, 201, 0.9);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 4px 12px rgba(28, 58, 42, 0.1);
+}
+
+.map-legend span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #496157;
+  font-size: 9px;
   font-weight: 800;
-  box-shadow: 0 3px 10px rgba(20, 35, 26, 0.28);
-  opacity: 0.82;
 }
 
-.known-pin.plant {
-  background: #2fb088;
+.map-legend i {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
 }
 
-.known-pin.insect {
-  background: #c47a2c;
-}
+.legend-found { background: #2f6b45; }
+.legend-known { background: #b68148; }
+.legend-current { background: #4d85c5; }
 
 .leaflet-popup-content-wrapper {
+  border: 1px solid #dde5dc;
   border-radius: 8px;
-  border: 1px solid rgba(16, 34, 51, 0.18);
+  box-shadow: 0 7px 18px rgba(28, 58, 42, 0.16);
 }
 
 .leaflet-popup-content {
-  color: #102233;
-  font-size: 13px;
-  line-height: 1.45;
+  color: #17382b;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 @media (max-width: 520px) {
-  .map-shell {
-    height: 54vh;
-    min-height: 360px;
+  .map-shell,
+  .kamiyama-map {
+    min-height: 390px;
+  }
+
+  .map-legend {
+    left: 10px;
+    right: auto;
   }
 }

@@ -15,10 +15,12 @@
     "expo-camera": "^56.0.8",
     "expo-location": "^56.0.18",
     "leaflet": "^1.9.4",
+    "lucide-react-native": "^1.25.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-leaflet": "^5.0.0",
     "react-native": "^0.81.5",
+    "react-native-svg": "^15.15.5",
     "react-native-web": "^0.21.1"
   },
   "devDependencies": {
