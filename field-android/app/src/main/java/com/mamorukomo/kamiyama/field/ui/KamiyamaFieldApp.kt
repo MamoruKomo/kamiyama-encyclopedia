@@ -22,15 +22,17 @@ import com.mamorukomo.kamiyama.field.data.LatLng
 import com.mamorukomo.kamiyama.field.data.Observation
 import com.mamorukomo.kamiyama.field.data.ObservationStore
 import com.mamorukomo.kamiyama.field.data.SyncClient
+import com.mamorukomo.kamiyama.field.ui.screens.CandidatesScreen
 import com.mamorukomo.kamiyama.field.ui.screens.DexScreen
+import com.mamorukomo.kamiyama.field.ui.screens.HomeScreen
 import com.mamorukomo.kamiyama.field.ui.screens.MapScreen
-import com.mamorukomo.kamiyama.field.ui.screens.SyncScreen
 import kotlinx.coroutines.launch
 
-internal enum class AppTab(val label: String, val token: String, val title: String) {
-    Sync("うけとる", "AI", "THINKLETから発見をうけとる"),
-    Map("マップ", "MAP", "たんけんマップ"),
-    Dex("ずかん", "DEX", "発見ずかん"),
+internal enum class AppTab(val label: String, val title: String) {
+    Home("ホーム", "THINKLETで見つける、神山のいきもの"),
+    Dex("図鑑", "見つけた生き物"),
+    Map("地図", "発見した場所"),
+    Candidates("AI候補", "次に探したい生き物"),
 }
 
 @Composable
@@ -56,7 +58,7 @@ fun KamiyamaFieldApp(
     MaterialTheme(colorScheme = colorScheme) {
         val context = LocalContext.current
         var observations by remember { mutableStateOf(store.loadObservations()) }
-        var activeTab by remember { mutableStateOf(AppTab.Sync) }
+        var activeTab by remember { mutableStateOf(AppTab.Home) }
         var selectedObservation by remember { mutableStateOf<Observation?>(null) }
         var currentPoint by remember { mutableStateOf(LatLng(33.9676, 134.3503)) }
         var isSyncing by remember { mutableStateOf(false) }
@@ -121,7 +123,6 @@ fun KamiyamaFieldApp(
                     FieldHeader(
                         observations = observations,
                         activeTab = activeTab,
-                        message = message,
                     )
                 },
                 bottomBar = {
@@ -130,12 +131,16 @@ fun KamiyamaFieldApp(
                 containerColor = MaterialTheme.colorScheme.background,
             ) { padding ->
                 when (activeTab) {
-                    AppTab.Sync -> SyncScreen(
+                    AppTab.Home -> HomeScreen(
                         padding = padding,
                         observations = observations,
                         isSyncing = isSyncing,
                         syncEnabled = syncClient.isConfigured,
+                        message = message,
                         onSync = ::importFromThinklet,
+                        onOpenDex = { activeTab = AppTab.Dex },
+                        onOpenMap = { activeTab = AppTab.Map },
+                        onOpenCandidates = { activeTab = AppTab.Candidates },
                     )
 
                     AppTab.Map -> MapScreen(
@@ -164,6 +169,8 @@ fun KamiyamaFieldApp(
                             message = "${observation.customName} をずかんから外しました。"
                         },
                     )
+
+                    AppTab.Candidates -> CandidatesScreen(padding = padding)
                 }
             }
         }

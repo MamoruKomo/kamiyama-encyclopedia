@@ -67,15 +67,11 @@ internal fun MapScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            AdventureCard(tint = FieldLeaf, filled = false) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StatusPill("MAP", FieldLeaf)
-                        StatusPill("発見 ${observations.size}", FieldGreen)
-                        StatusPill("GBIF ${SpeciesCandidates.sumOf { it.knownLocations.size }}", FieldSky)
-                    }
-                    SectionTitle("根拠マップ")
-                }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatusPill("すべて", FieldGreen)
+                StatusPill("植物", FieldLeaf)
+                StatusPill("昆虫", FieldYellow)
+                StatusPill("発見 ${observations.size}", FieldSky)
             }
         }
         item {
@@ -92,11 +88,9 @@ internal fun MapScreen(
         }
         if (observations.isEmpty()) {
             item {
-                AdventureCard(tint = FieldCoral, filled = false) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StatusPill("NEXT", FieldCoral)
-                        Text("THINKLETで撮ると、ここに発見ピンが立ちます。", color = FieldTextMuted)
-                    }
+                Row(modifier = Modifier.padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatusPill("ヒント", FieldCoral)
+                    Text("撮った場所に発見ピンが立ちます", color = FieldTextMuted)
                 }
             }
         }

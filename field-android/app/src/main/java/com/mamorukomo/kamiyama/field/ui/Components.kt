@@ -14,13 +14,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.Eco
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -30,25 +35,29 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.mamorukomo.kamiyama.field.data.Rarity
 import com.mamorukomo.kamiyama.field.data.SpeciesCategory
+import com.mamorukomo.kamiyama.field.R
 
-internal val FieldGreen = Color(0xFF2F9F68)
-internal val FieldYellow = Color(0xFFE6AC35)
-internal val FieldCoral = Color(0xFFE66A57)
-internal val FieldSky = Color(0xFF3F88B8)
-internal val FieldLeaf = Color(0xFF7CB342)
-internal val FieldBerry = Color(0xFFC84A68)
-internal val FieldInk = Color(0xFF111816)
+internal val FieldForest = Color(0xFF173D2B)
+internal val FieldGreen = Color(0xFF2D7A52)
+internal val FieldGreenSoft = Color(0xFFE5F2E9)
+internal val FieldYellow = Color(0xFFD99A2B)
+internal val FieldCoral = Color(0xFFE56F51)
+internal val FieldSky = Color(0xFF3A82A8)
+internal val FieldLeaf = Color(0xFF668F45)
+internal val FieldBerry = Color(0xFFB44B68)
+internal val FieldInk = Color(0xFF18221D)
 internal val FieldPanel = Color(0xFFFFFFFF)
-internal val FieldPanelAlt = Color(0xFFF7FAF5)
-internal val FieldTextMuted = Color(0xFF66736C)
+internal val FieldPanelAlt = Color(0xFFF7F8F3)
+internal val FieldTextMuted = Color(0xFF68736C)
 
-private val cardShape = RoundedCornerShape(8.dp)
+private val cardShape = RoundedCornerShape(12.dp)
 
 @Composable
 internal fun AppCard(
@@ -60,7 +69,7 @@ internal fun AppCard(
         modifier = modifier,
         shape = cardShape,
         color = FieldPanel,
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE0E6E1)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE1E7E2)),
         tonalElevation = 0.dp,
         shadowElevation = 1.dp,
     ) {
@@ -80,8 +89,8 @@ internal fun AdventureCard(
     Surface(
         modifier = modifier,
         shape = cardShape,
-        color = if (filled) tint.copy(alpha = 0.10f) else FieldPanel,
-        border = androidx.compose.foundation.BorderStroke(1.dp, tint.copy(alpha = 0.25f)),
+        color = if (filled) tint.copy(alpha = 0.08f) else FieldPanel,
+        border = androidx.compose.foundation.BorderStroke(1.dp, tint.copy(alpha = 0.18f)),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
@@ -123,7 +132,7 @@ internal fun MetricTile(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(10.dp),
         color = tint.copy(alpha = 0.10f),
         border = androidx.compose.foundation.BorderStroke(1.dp, tint.copy(alpha = 0.22f)),
     ) {
@@ -150,7 +159,7 @@ internal fun FieldButton(
         enabled = enabled,
         onClick = onClick,
         modifier = modifier.height(50.dp),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = tint,
             contentColor = Color.White,
@@ -297,6 +306,43 @@ internal fun ObservationImage(uri: String, modifier: Modifier = Modifier) {
                 Text("NO IMAGE", color = FieldTextMuted, fontWeight = FontWeight.ExtraBold)
                 Text("写真なし", color = FieldTextMuted, style = MaterialTheme.typography.labelSmall)
             }
+        }
+    }
+}
+
+@Composable
+internal fun CandidateImage(
+    candidateId: String,
+    modifier: Modifier = Modifier,
+    category: SpeciesCategory? = null,
+) {
+    val resource = when (candidateId) {
+        "trypoxylus-dichotomus" -> R.drawable.species_kabutomushi
+        "prosopocoilus-inclinatus" -> R.drawable.species_nokogiri_kuwagata
+        "ardisia-crenata" -> R.drawable.species_manryo
+        "argynnis-hyperbius" -> R.drawable.species_tsumaguro
+        else -> null
+    }
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(FieldGreenSoft),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (resource != null) {
+            Image(
+                painter = painterResource(resource),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Icon(
+                imageVector = if (category == SpeciesCategory.Insect) Icons.Rounded.BugReport else Icons.Rounded.Eco,
+                contentDescription = null,
+                modifier = Modifier.size(34.dp),
+                tint = category?.accentColor() ?: FieldGreen,
+            )
         }
     }
 }

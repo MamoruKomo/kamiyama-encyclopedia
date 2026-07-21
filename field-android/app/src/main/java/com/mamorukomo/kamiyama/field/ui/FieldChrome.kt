@@ -1,6 +1,5 @@
 package com.mamorukomo.kamiyama.field.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,7 +8,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -17,8 +21,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mamorukomo.kamiyama.field.data.Observation
 
@@ -26,53 +31,48 @@ import com.mamorukomo.kamiyama.field.data.Observation
 internal fun FieldHeader(
     observations: List<Observation>,
     activeTab: AppTab,
-    message: String,
 ) {
-    Surface(color = FieldPanel, shadowElevation = 2.dp) {
-        Column(
+    Surface(color = FieldPanel, shadowElevation = 1.dp) {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(FieldPanel)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(
+                    text = "神山図鑑",
+                    color = FieldForest,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontFamily = FontFamily.Serif,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = activeTab.title,
+                    color = FieldTextMuted,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+            Surface(
+                color = FieldGreenSoft,
+                shape = CircleShapeLarge,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Surface(color = FieldGreen, shape = CircleShapeSmall) {
+                        Box(modifier = Modifier.padding(4.dp))
+                    }
                     Text(
-                        "神山いきものずかん",
-                        color = FieldInk,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.ExtraBold,
-                    )
-                    Text(
-                        activeTab.title,
-                        color = FieldTextMuted,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        text = "${observations.size} 発見",
+                        color = FieldForest,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelLarge,
                     )
                 }
-                DiscoveryCounter(observations.size)
             }
-            StatusPill(message, FieldGreen)
-        }
-    }
-}
-
-@Composable
-private fun DiscoveryCounter(count: Int) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = FieldYellow.copy(alpha = 0.16f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, FieldYellow.copy(alpha = 0.30f)),
-        contentColor = FieldInk,
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(count.toString(), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
-            Text("発見", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -82,15 +82,14 @@ internal fun FieldBottomBar(
     activeTab: AppTab,
     onTabSelected: (AppTab) -> Unit,
 ) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(FieldPanel)
-            .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        color = FieldPanel,
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Surface(color = FieldPanel, shadowElevation = 8.dp) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 8.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             AppTab.entries.forEach { tab ->
                 FieldTabButton(
                     tab = tab,
@@ -110,27 +109,33 @@ private fun FieldTabButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val icon = when (tab) {
+        AppTab.Home -> Icons.Rounded.Home
+        AppTab.Dex -> Icons.Rounded.MenuBook
+        AppTab.Map -> Icons.Rounded.Map
+        AppTab.Candidates -> Icons.Rounded.AutoAwesome
+    }
     Surface(
         onClick = onClick,
-        modifier = modifier.height(54.dp),
-        shape = RoundedCornerShape(8.dp),
-        color = if (selected) FieldGreen else Color(0xFFF1F6F2),
-        contentColor = if (selected) Color.White else FieldInk,
+        modifier = modifier.height(58.dp),
+        color = Color.Transparent,
+        contentColor = if (selected) FieldGreen else FieldTextMuted,
     ) {
         Box(contentAlignment = Alignment.Center) {
             Column(
-                modifier = Modifier.padding(horizontal = 8.dp),
-                verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
+                Icon(imageVector = icon, contentDescription = tab.label)
                 Text(
-                    tab.token,
+                    text = tab.label,
                     style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
+                    fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Medium,
                 )
-                Text(tab.label, fontWeight = FontWeight.ExtraBold, maxLines = 1)
             }
         }
     }
 }
+
+private val CircleShapeLarge = androidx.compose.foundation.shape.RoundedCornerShape(99.dp)
+private val CircleShapeSmall = androidx.compose.foundation.shape.RoundedCornerShape(99.dp)
